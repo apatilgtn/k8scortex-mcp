@@ -1,5 +1,7 @@
 # K8sCortex — Kubernetes MCP Server
 
+[![smithery badge](https://smithery.ai/badge/apatil0431/k8scortex-mcp)](https://smithery.ai/server/apatil0431/k8scortex-mcp)
+
 > A production-grade Model Context Protocol (MCP) server that gives developers, AI agents, and automation pipelines a single, secure, natural-language interface to Kubernetes — across any cloud, any cluster, any team.
 
 ---
