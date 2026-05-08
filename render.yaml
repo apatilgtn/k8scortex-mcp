@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: k8scortex-mcp
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DISABLE_AUTH
+        value: "true"
+      - key: PORT
+        value: "3000"

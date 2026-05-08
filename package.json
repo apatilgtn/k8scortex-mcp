@@ -1,6 +1,7 @@
 {
   "name": "k8scortex-mcp",
-  "version": "1.0.1",
+  "version": "1.0.2",
+  "mcpName": "io.github.apatilgtn/k8scortex-mcp",
   "description": "Production-grade MCP server for Kubernetes — 75 tools across GKE, AKS, EKS, OpenShift and Minikube with RBAC, audit logging, GitOps (ArgoCD + Flux), and multi-cluster support",
   "main": "dist/index.js",
   "type": "module",
@@ -42,7 +43,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/apatilgtn/k8scortex-mcp"
   },
   "scripts": {
     "build": "tsc",

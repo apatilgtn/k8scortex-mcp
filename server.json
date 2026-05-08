@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.apatilgtn/k8scortex-mcp",
+  "description": "Production-grade MCP server for Kubernetes — 75 tools across GKE, AKS, EKS, OpenShift and Minikube with RBAC, audit logging, GitOps (ArgoCD + Flux), and multi-cluster support.",
+  "repository": {
+    "url": "https://github.com/apatilgtn/k8scortex-mcp",
+    "source": "github"
+  },
+  "version": "1.0.2",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "k8scortex-mcp",
+      "version": "1.0.2",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "KUBECONFIG",
+          "description": "Path to your kubeconfig file. Defaults to ~/.kube/config if not set.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "DISABLE_AUTH",
+          "description": "Set to 'true' to disable JWT authentication (recommended for local use).",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
