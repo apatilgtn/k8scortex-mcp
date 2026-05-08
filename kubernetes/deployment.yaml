@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kubenexus
+  namespace: platform-mcp
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: kubenexus
+  template:
+    metadata:
+      labels:
+        app: kubenexus
+    spec:
+      serviceAccountName: kubenexus
+      containers:
+      - name: mcp-server
+        image: kubenexus:latest
+        ports:
+        - containerPort: 3000
+        env:
+        - name: ENTRA_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: mcp-entra-secrets
+              key: ENTRA_CLIENT_ID
+        - name: ENTRA_TENANT_ID
+          valueFrom:
+            secretKeyRef:
+              name: mcp-entra-secrets
+              key: ENTRA_TENANT_ID
+        volumeMounts:
+        - name: secrets-store-inline
+          mountPath: "/mnt/secrets-store"
+          readOnly: true
+      volumes:
+      - name: secrets-store-inline
+        csi:
+          driver: secrets-store.csi.k8s.io
+          readOnly: true
+          volumeAttributes:
+            secretProviderClass: "kubenexus-kv-sync"

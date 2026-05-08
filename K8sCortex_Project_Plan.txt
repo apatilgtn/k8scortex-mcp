@@ -1,0 +1,353 @@
+
+K8sCortex
+MCP Server for Kubernetes — Project Plan
+Version 1.0  |  May 2026
+Platform Engineering  |  Internal
+
+1. Executive summary
+K8sCortex is a Model Context Protocol (MCP) server that gives developers, AI agents, and automation pipelines a single, secure, natural-language interface to Kubernetes — across any cloud, any cluster, any team.
+Today, developers who deploy services on Kubernetes must context-switch between kubectl, dashboards, Helm, Grafana, and platform team tickets every time they need to understand or change what their service is doing. Platform teams spend a disproportionate share of their time answering questions that should be self-serve. K8sCortex eliminates both problems by turning the Kubernetes API into a set of composable, auditable MCP tools that any caller — human or agent — can use safely.
+This document is the project plan for building and delivering K8sCortex as a production platform service, available across the organisation's multi-cloud infrastructure and ready for integration with AI agents including Claude and Prism Agent.
+
+Project at a glance
+Project name
+K8sCortex — Kubernetes MCP Server
+Sponsor
+Head of Platform Engineering
+Delivery owner
+Lead Platform Engineer (DevOps)
+Start date
+June 2026
+Target GA
+December 2026  (6-month programme)
+Clouds in scope
+Azure AKS, AWS EKS, GCP GKE
+Agent consumers
+Claude, Prism Agent, CI/CD pipelines, IDE extensions
+Classification
+Internal — Platform Engineering
+
+
+2. Problem statement
+Kubernetes is now the default deployment substrate for most engineering teams. Yet the experience of working with it day-to-day has not meaningfully improved. Three specific problems drive the case for KubeNexus:
+
+2.1  Developer friction
+Most application developers lack deep Kubernetes expertise. When their service fails, scales unexpectedly, or behaves differently between environments, they do not have the tools or knowledge to self-diagnose. The result is a support queue that grows linearly with team size. A platform team of four engineers cannot sustainably support 60 application engineers who each raise two or three Kubernetes questions per week.
+
+2.2  Tribal knowledge and access inconsistency
+Cluster access today is managed through a patchwork of kubeconfig files, VPN profiles, and role assignments across three clouds. New team members spend their first two weeks figuring out how to access production monitoring. Contractors and offshore teams often have no access at all, even for read-only operations they genuinely need. This is both a developer experience failure and a security risk: broad access given to resolve friction is harder to audit than fine-grained tool-level access.
+
+2.3  AI agents cannot reason about cluster state
+The organisation's AI platform — Prism AI and Prism Agent — is designed to detect signals and take action across Azure infrastructure. Kubernetes is a significant part of that infrastructure, but today Prism Agent has no visibility into cluster state, pod health, deployment history, or scaling events. An agent that detects an anomaly in a service's telemetry cannot correlate it with a recent rollout or resource constraint without a human in the loop to pull that information manually. KubeNexus closes this gap.
+
+3. Vision and objectives
+3.1  Vision
+Any developer or agent in the organisation can understand and control their Kubernetes workloads using natural language, from any cloud, through a single secure endpoint — without ever needing direct cluster access or platform team assistance for routine operations.
+
+3.2  Objectives
+	•	Reduce platform team Kubernetes support tickets by 60% within three months of GA.
+	•	Enable AI agents (Claude, Prism Agent) to read cluster state and perform safe operations autonomously.
+	•	Provide a single MCP endpoint that abstracts Azure AKS, AWS EKS, and GCP GKE clusters.
+	•	Enforce organisation-grade security: no public endpoint, token-based auth, role-aware tool access, full audit trail.
+	•	Deliver a self-serve developer experience that does not require kubectl knowledge for 80% of common tasks.
+
+3.3  Out of scope
+	•	Cluster provisioning (Terraform, Pulumi) — this is handled by existing IaC pipelines.
+	•	Service mesh management (Istio, Linkerd) — out of scope for v1.
+	•	Stateful workload management (databases, queues) — addressed in a future phase.
+	•	Cost optimisation tooling — a separate workstream.
+
+4. Solution overview
+4.1  What KubeNexus is
+KubeNexus is a production-grade MCP server deployed as a Kubernetes Deployment in a dedicated platform namespace. It exposes Kubernetes operations as structured MCP tools, validates every caller's identity against the organisation's identity provider, enforces tool-level authorisation through a role policy, and writes a structured audit record for every invocation. It communicates over Streamable HTTP transport and is reachable exclusively from the organisation's private network.
+
+4.2  Tool capability domains
+KubeNexus tools are organised into five domains. Each domain has a distinct caller profile and authorisation boundary:
+
+Tool domains
+Workload visibility
+Read pod status, logs, resource usage, events. Available to all authenticated users.
+Deployment operations
+Scale, rollback, restart. Requires platform-engineer or release-manager role.
+Configuration and policy
+Read ConfigMaps, resource quotas, admission policy. Available to team leads and above.
+Observability bridging
+HPA events, node pressure, warning signals. Available to SRE and on-call roles.
+Multi-cluster context
+Switch cluster context, compare state across environments. SRE and platform team only.
+
+4.3  Consumers
+KubeNexus is designed for four distinct consumer types, each connecting over MCP:
+	•	Developers via Claude in their IDE or browser — natural language queries about their services.
+	•	Prism Agent — programmatic tool calls as part of multi-step infrastructure reasoning chains.
+	•	CI/CD pipelines — automated deployment verification, rollback triggers, and health gate checks.
+	•	On-call engineers via Claude Code — incident response queries without direct cluster access.
+
+5. Architecture summary
+5.1  Deployment position
+KubeNexus runs in a dedicated Kubernetes namespace called platform-mcp, separate from all application namespaces. It uses a scoped ServiceAccount with a ClusterRole limited to the operations the tools require — read access is broad, write access is narrow and explicit. No application workloads share this namespace.
+
+5.2  Network boundary
+The KubeNexus service is exposed as a ClusterIP within the cluster. External access is through a private load balancer, accessible only from the organisation's internal network. The private DNS name mcp-k8s.platform.internal resolves to KubeNexus from all clouds and on-premises. There is no public endpoint at any layer.
+
+5.3  Multi-cloud cluster routing
+Each cloud maintains a private network connection to the organisation's hub network — Azure via Private Link and VNet peering, AWS via PrivateLink and Transit Gateway, GCP via Private Service Connect. KubeNexus maintains a kubeconfig store in the organisation's secrets manager, with one entry per cluster. When a tool call targets a specific cluster, KubeNexus retrieves the relevant credential, executes the operation, and discards the session. Credentials rotate in the secrets manager without requiring server restarts.
+
+5.4  Security layers
+
+Security model — four independent layers
+Network
+ClusterIP only. Private DNS. No public endpoint. Org VPN or ExpressRoute required.
+Authentication
+OIDC token validation on every request. Short-lived tokens from Entra ID / IAM Identity Center.
+Authorisation
+Per-tool role check against caller's identity claims. OPA policy evaluated before execution.
+Tool design
+Destructive tools default to dry-run. Namespace scoping enforced. Result limits on log retrieval.
+
+6. Phases and work breakdown
+The programme is structured into five sequential phases across six months. Each phase has a defined output (a working, deployable artefact) so progress is visible and the team can validate assumptions early.
+
+Phase
+Description
+Duration
+Who
+Output
+Phase 0
+Foundation and design
+2 weeks
+Platform lead + Arch
+Design doc, ADR records
+Phase 1
+Core server — single cluster
+4 weeks
+2 platform engineers
+Working MCP server, AKS
+Phase 2
+Security hardening
+3 weeks
+Platform + Security
+Auth, OPA, audit log
+Phase 3
+Multi-cluster + multi-cloud
+5 weeks
+Platform + Cloud team
+AKS + EKS + GKE
+Phase 4
+Agent integration
+4 weeks
+Platform + AI team
+Prism Agent connected
+Phase 5
+GA readiness
+6 weeks
+Full team
+Docs, runbooks, SLOs
+
+6.1  Phase 0 — Foundation and design  (Weeks 1–2)
+Before building anything, the team aligns on the decisions that are expensive to change later. This phase produces a set of Architecture Decision Records (ADRs) that document each key choice with its rationale and rejected alternatives.
+	•	Define the tool taxonomy: which tools exist, what they return, what roles they require.
+	•	Choose the identity provider integration: Entra ID tokens for Azure-primary, Cognito/IAM for AWS callers.
+	•	Define the role model: platform-engineer, release-manager, sre, ci-pipeline, developer (read-only).
+	•	Document the multi-cluster credential management approach.
+	•	Produce the network topology diagram showing private connectivity across all three clouds.
+	•	Establish the audit log schema — field names, retention period, SIEM integration target.
+
+6.2  Phase 1 — Core server, single cluster  (Weeks 3–6)
+The goal of Phase 1 is a working MCP server connected to a single AKS cluster, with all five tool domains implemented, reachable from Claude, and producing correct results. Security is placeholder (no real auth) at this stage — the priority is tool correctness and protocol compliance.
+	•	Set up the platform-mcp namespace, ServiceAccount, and ClusterRole in the target AKS cluster.
+	•	Implement the Streamable HTTP transport server with a /health endpoint.
+	•	Implement workload visibility tools: list pods, get logs, describe deployment, list nodes.
+	•	Implement deployment operation tools: scale deployment, restart pod, rollback release.
+	•	Implement configuration tools: get ConfigMap, describe namespace quota, list recent events.
+	•	Implement observability bridging tools: get HPA status, list warning events, get node pressure.
+	•	Write tool descriptions that are clear enough for an agent to select the right tool without hints.
+	•	Test all tools end-to-end through Claude in a developer sandbox environment.
+
+6.3  Phase 2 — Security hardening  (Weeks 7–9)
+Phase 2 replaces placeholder security with production-grade controls. No new tools are added in this phase — the scope is exclusively hardening the existing tool set.
+	•	Implement OIDC token validation middleware using the organisation's Entra ID tenant.
+	•	Add tool-level authorisation: each tool specifies required roles, checked before execution.
+	•	Deploy OPA/Gatekeeper policies for the platform-mcp namespace.
+	•	Implement structured audit logging: one JSON record per tool invocation, written to Log Analytics.
+	•	Replace any environment variable secrets with CSI Secrets Store volumes backed by Azure Key Vault.
+	•	Add NetworkPolicy to deny all ingress except from the approved internal network CIDR and the Istio sidecar.
+	•	Conduct an internal security review with findings documented and tracked to resolution.
+
+6.4  Phase 3 — Multi-cluster and multi-cloud  (Weeks 10–14)
+Phase 3 extends KubeNexus from a single AKS cluster to the full multi-cloud fleet. This is the most technically complex phase and should be given time buffer.
+	•	Implement the kubeconfig store: per-cluster credentials stored in Azure Key Vault, fetched at request time.
+	•	Add a cluster parameter to all tool calls that accept it, with validation against a known-cluster registry.
+	•	Establish private network connectivity: AWS PrivateLink and Transit Gateway to hub VNet, GCP PSC peering.
+	•	Register mcp-k8s.platform.internal in Azure Private DNS, AWS Route 53 private zone, and GCP Cloud DNS private zone.
+	•	Connect to an EKS cluster in the AWS environment and validate all tool domains.
+	•	Connect to a GKE cluster in the GCP environment and validate all tool domains.
+	•	Test cross-cluster tool calls: a single agent session querying pods on AKS, then EKS, then GKE.
+	•	Document the credential rotation process and verify it works without service interruption.
+
+6.5  Phase 4 — Agent integration  (Weeks 15–18)
+Phase 4 connects KubeNexus to the organisation's AI platform. The Prism Agent team works in parallel to add KubeNexus as a registered MCP server, and joint testing validates composed tool chains.
+	•	Register KubeNexus as an MCP server in the Prism Agent tool registry.
+	•	Define composed scenarios: Prism AI detects anomaly → calls KubeNexus tools → forms diagnosis.
+	•	Test multi-server agent chains: Prism Agent Azure tools + KubeNexus tools in the same session.
+	•	Validate that Claude can use KubeNexus tools from claude.ai and Claude Code without additional setup.
+	•	Implement the CI/CD integration: a pipeline calling KubeNexus to verify deployment health before promoting a release.
+	•	Write and validate five end-to-end user journeys with real developers as testers.
+
+6.6  Phase 5 — GA readiness  (Weeks 19–24)
+Phase 5 is not a technical phase — it is the hardening, documentation, and enablement work that makes KubeNexus safe to hand to the wider organisation.
+	•	Write the developer guide: how to connect, what tools are available, example queries.
+	•	Write the platform operator runbook: how to deploy, upgrade, rotate credentials, respond to incidents.
+	•	Define SLOs: availability target (99.5%), p95 tool call latency (<2s), audit log delivery lag (<30s).
+	•	Set up alerting: unavailability, elevated error rates, auth failures (potential attack), unusual tool call volume.
+	•	Run a load test to validate horizontal scaling under peak developer usage.
+	•	Conduct a final security review covering the full multi-cloud deployment.
+	•	Deliver an internal launch session — a 30-minute demo and Q&A for all engineering teams.
+	•	Open the beta programme to ten volunteer teams before full org rollout.
+
+7. Milestone schedule
+
+Week
+Milestone
+Status
+Owner
+W2
+Phase 0 complete — ADRs signed off, tool taxonomy agreed
+Not started
+Platform Lead
+W6
+Phase 1 complete — core server working on AKS, validated via Claude
+Not started
+Platform Engineer
+W9
+Phase 2 complete — auth, OPA, audit log, secrets store in place
+Not started
+Platform + Security
+W14
+Phase 3 complete — three clouds connected, multi-cluster tool calls working
+Not started
+Platform + Cloud
+W16
+Prism Agent integration validated — composed tool chains tested
+Not started
+Platform + AI Team
+W18
+Phase 4 complete — Claude, Prism Agent, CI/CD all connected
+Not started
+Full Team
+W20
+Internal security review passed — all findings closed or accepted
+Not started
+Security
+W22
+Beta programme live — 10 pilot teams using KubeNexus
+Not started
+Platform Lead
+W24
+GA — KubeNexus available to all engineering teams, SLOs active
+Not started
+Platform Lead
+
+8. Team and roles
+
+Roles required
+Platform lead (0.5 FTE)
+Programme ownership, ADR sign-off, stakeholder communication, GA decision.
+Platform engineer 1 (1.0 FTE)
+MCP server implementation, tool development, Phase 1–3 lead.
+Platform engineer 2 (0.7 FTE)
+Security hardening, network connectivity, Phase 2–3 support.
+Cloud engineer — Azure (0.3 FTE)
+Private Link, Key Vault, AKS private cluster configuration.
+Cloud engineer — AWS (0.3 FTE)
+PrivateLink, Transit Gateway, EKS private API server.
+Cloud engineer — GCP (0.2 FTE)
+PSC, VPC peering, GKE private cluster — can be shared with AWS eng.
+Security engineer (0.2 FTE)
+Phase 2 review, OPA policy authoring, final security sign-off.
+AI / Prism team (0.3 FTE)
+Prism Agent integration, multi-server chain testing, Phase 4.
+Technical writer (0.3 FTE)
+Developer guide, operator runbook — joins at Phase 5.
+
+Note: FTE allocations are approximate peaks. Most engineers contribute part-time across multiple phases. The platform lead should protect at least one full-time platform engineer for the duration of Phase 1 — context switching during the core server build is the most common source of delay on projects of this type.
+
+9. Risk register
+
+Risk
+Likelihood
+Impact
+Mitigation
+Multi-cloud network connectivity delays
+High
+High
+Start network design in Phase 0. Engage cloud teams early. Run connectivity proof of concept before Phase 3 begins.
+OPA / policy authoring complexity underestimated
+Medium
+Medium
+Allocate security engineer for full Phase 2. Begin with simple allow/deny rules and iterate rather than attempting complete policy on day one.
+Credential rotation breaks cluster access
+Medium
+High
+Test rotation in staging before production. Use versioned secrets with a one-version overlap window. Include rotation test in Phase 3 acceptance criteria.
+Agent misuse of destructive tools
+Medium
+High
+All destructive tools default to dry-run. Agents must explicitly set dryRun: false. Dry-run mode tested in Phase 1, enforced via policy in Phase 2.
+Tool descriptions unclear for agents
+Medium
+Medium
+Tool descriptions reviewed by the AI team in Phase 4. Include at least two non-platform engineers in Phase 1 user testing.
+OIDC token scope mismatch across clouds
+Low
+High
+Define the token scope and claim structure in Phase 0 ADR before any implementation begins. Test with real tokens in Phase 2.
+Platform team capacity constraint
+High
+Medium
+Confirm FTE commitments with managers before kickoff. Phase 1 milestone is a gate — do not start Phase 2 until Phase 1 is validated.
+
+10. Success metrics
+10.1  Platform health (SLOs)
+	•	Availability: 99.5% measured monthly across all three clouds.
+	•	Tool call p95 latency: under 2 seconds for all read operations.
+	•	Audit log delivery: every tool call record delivered to Log Analytics within 30 seconds of execution.
+	•	Auth failure rate: below 0.1% of total calls (above this threshold triggers an alert).
+
+10.2  Developer experience (measured 90 days post-GA)
+	•	Kubernetes-related platform team tickets: 60% reduction versus the 90-day pre-GA baseline.
+	•	Developer onboarding time for Kubernetes access: from current average of 2 days to under 2 hours.
+	•	Tool adoption: at least 70% of engineering teams have made at least one KubeNexus call.
+
+10.3  Agent integration quality
+	•	Prism Agent can correctly diagnose a simulated pod crash scenario without human input, using only KubeNexus tools.
+	•	CI/CD pipeline health gate (KubeNexus deployment verification) runs successfully on 10 consecutive releases.
+	•	Zero unintended cluster mutations caused by agent tool calls in the first 90 days of operation.
+
+11. Dependencies and assumptions
+11.1  Dependencies
+	•	Azure Entra ID tenant with applications registered for OIDC token issuance — required before Phase 2.
+	•	Azure Key Vault instance accessible from the platform-mcp namespace via CSI driver — required before Phase 2.
+	•	Private network connectivity established between Azure hub VNet and AWS/GCP environments — required before Phase 3.
+	•	Private DNS zones created and forwarding rules configured in all three clouds — required before Phase 3.
+	•	Prism Agent team available for integration work in Phase 4 — must be confirmed before Phase 3 ends.
+	•	Security team availability for Phase 2 review and Phase 5 sign-off — must be booked two weeks in advance.
+
+11.2  Assumptions
+	•	The target AKS cluster for Phase 1 is already running with a private API server. No cluster provisioning is in scope.
+	•	The organisation has an existing Log Analytics workspace where audit events can be written.
+	•	Developers already have access to Claude (claude.ai or Claude Code) — KubeNexus does not provision AI access.
+	•	The Prism Agent codebase supports adding external MCP servers — no major refactoring required.
+	•	Network engineers in the cloud teams can deliver private connectivity within the Phase 3 window.
+
+12. Next steps
+To formally initiate the programme, the following actions must be completed before Phase 0 begins:
+
+	•	Schedule kickoff meeting with platform lead, both platform engineers, and security engineer.
+	•	Confirm FTE allocations with engineering managers for all roles listed in Section 8.
+	•	Book the target AKS sandbox cluster for Phase 1 development work.
+	•	Create the project repository, ADR template, and Phase 0 tracking board.
+	•	Send a one-pager to all engineering team leads describing the programme and inviting volunteers for the Phase 5 beta.
+
+
+For questions or contributions to this plan, contact the Platform Engineering team.

@@ -1,0 +1,32 @@
+# Source — consumers use dist/
+src/
+
+# Tests
+tests/
+test-cases/
+
+# Kubernetes deployment manifests
+kubernetes/
+
+# Docs (kept in README/CHANGELOG only)
+docs/
+
+# Dev/build config
+tsconfig.json
+eslint.config.js
+.github/
+
+# Validation and planning docs
+*.html
+*.txt
+K8sCortex_*.md
+K8sCortex_Publish_Readiness_Scorecard.md
+
+# Audit and SBOM (generated artifacts)
+audit.log
+sbom.json
+
+# Local env
+.env
+.env.*
+node_modules/

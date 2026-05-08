@@ -1,0 +1,132 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kubenexus
+  namespace: platform-mcp
+  labels:
+    app.kubernetes.io/name: kubenexus
+  annotations:
+    # Workload Identity: federate with Entra ID managed identity
+    azure.workload.identity/client-id: "${AZURE_CLIENT_ID}"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubenexus-reader
+  labels:
+    app.kubernetes.io/name: kubenexus
+rules:
+  # Read-only access for workload visibility, configuration, and observability tools
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - nodes
+      - events
+      - configmaps
+      - persistentvolumeclaims
+      - resourcequotas
+      - namespaces
+      - serviceaccounts
+      - limitranges
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+      - statefulsets
+      - daemonsets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling"]
+    resources:
+      - horizontalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["policy"]
+    resources:
+      - poddisruptionbudgets
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources:
+      - storageclasses
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["autoscaling.k8s.io"]
+    resources:
+      - verticalpodautoscalers
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["metrics.k8s.io"]
+    resources:
+      - nodes
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources:
+      - roles
+      - rolebindings
+      - clusterroles
+      - clusterrolebindings
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources:
+      - jobs
+      - cronjobs
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["networking.k8s.io"]
+    resources:
+      - ingresses
+      - networkpolicies
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["argoproj.io"]
+    resources:
+      - applications
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["authorization.k8s.io"]
+    resources:
+      - subjectaccessreviews
+    verbs: ["create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kubenexus-writer
+  labels:
+    app.kubernetes.io/name: kubenexus
+rules:
+  # Scoped write access for deployment operation tools only
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - deployments/scale
+    verbs: ["patch", "update"]
+  - apiGroups: [""]
+    resources:
+      - pods
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubenexus-reader-binding
+  labels:
+    app.kubernetes.io/name: kubenexus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubenexus-reader
+subjects:
+  - kind: ServiceAccount
+    name: kubenexus
+    namespace: platform-mcp
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kubenexus-writer-binding
+  labels:
+    app.kubernetes.io/name: kubenexus
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kubenexus-writer
+subjects:
+  - kind: ServiceAccount
+    name: kubenexus
+    namespace: platform-mcp

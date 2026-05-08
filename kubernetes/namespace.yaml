@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: platform-mcp
+  labels:
+    app.kubernetes.io/part-of: kubenexus
+    app.kubernetes.io/managed-by: platform-engineering

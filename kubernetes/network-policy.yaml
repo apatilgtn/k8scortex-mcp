@@ -1,0 +1,46 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: kubenexus-ingress
+  namespace: platform-mcp
+  labels:
+    app.kubernetes.io/name: kubenexus
+spec:
+  podSelector:
+    matchLabels:
+      app: kubenexus
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Allow traffic only from the internal network CIDR
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+        - ipBlock:
+            cidr: 172.16.0.0/12
+      ports:
+        - protocol: TCP
+          port: 3000
+  egress:
+    # Allow DNS resolution
+    - to: []
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Allow HTTPS to Kubernetes API servers and Azure Key Vault
+    - to: []
+      ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # Allow metadata endpoint for Workload Identity
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80

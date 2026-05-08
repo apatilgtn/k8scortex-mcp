@@ -1,0 +1,112 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: kubenexus-alerts
+  namespace: platform-mcp
+  labels:
+    app.kubernetes.io/name: kubenexus
+    prometheus: kube-prometheus
+spec:
+  groups:
+    - name: kubenexus.availability
+      interval: 30s
+      rules:
+        - alert: KubeNexusDown
+          expr: |
+            kube_deployment_status_available_replicas{namespace="platform-mcp", deployment="kubenexus"} < 2
+          for: 5m
+          labels:
+            severity: critical
+            team: platform-engineering
+          annotations:
+            summary: "KubeNexus has fewer than 2 available replicas"
+            description: "Only {{ $value }} replicas are available. Minimum 2 required for HA."
+            runbook_url: "https://docs.internal/kubenexus/operator-runbook#symptom-connection-refused-from-callers"
+
+        - alert: KubeNexusPodsNotReady
+          expr: |
+            kube_deployment_status_replicas{namespace="platform-mcp", deployment="kubenexus"}
+            - kube_deployment_status_ready_replicas{namespace="platform-mcp", deployment="kubenexus"} > 0
+          for: 10m
+          labels:
+            severity: warning
+            team: platform-engineering
+          annotations:
+            summary: "KubeNexus has pods that are not ready"
+            description: "{{ $value }} pod(s) are not ready for more than 10 minutes."
+
+    - name: kubenexus.performance
+      interval: 60s
+      rules:
+        - alert: KubeNexusHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              rate(kubenexus_tool_call_duration_seconds_bucket{namespace="platform-mcp"}[10m])
+            ) > 3
+          for: 10m
+          labels:
+            severity: warning
+            team: platform-engineering
+          annotations:
+            summary: "KubeNexus p95 tool call latency exceeds 3 seconds"
+            description: "p95 latency is {{ $value | humanizeDuration }}. SLO target is < 2s."
+
+        - alert: KubeNexusHighErrorRate
+          expr: |
+            (
+              sum(rate(kubenexus_tool_calls_total{status="failure"}[10m]))
+              /
+              sum(rate(kubenexus_tool_calls_total[10m]))
+            ) > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            team: platform-engineering
+          annotations:
+            summary: "KubeNexus tool error rate exceeds 5%"
+            description: "{{ $value | humanizePercentage }} of tool calls are failing."
+
+    - name: kubenexus.security
+      interval: 30s
+      rules:
+        - alert: KubeNexusAuthFailureSpike
+          expr: |
+            (
+              sum(rate(kubenexus_tool_calls_total{status="denied"}[5m]))
+              /
+              sum(rate(kubenexus_tool_calls_total[5m]))
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: critical
+            team: platform-engineering
+            team: security
+          annotations:
+            summary: "KubeNexus auth denial rate exceeds 1% — possible attack"
+            description: "{{ $value | humanizePercentage }} of requests are being denied. Investigate for credential stuffing or misconfigured callers."
+
+        - alert: KubeNexusHighDenialVolume
+          expr: |
+            sum(increase(kubenexus_tool_calls_total{status="denied"}[15m])) > 50
+          for: 5m
+          labels:
+            severity: warning
+            team: security
+          annotations:
+            summary: "KubeNexus received 50+ auth denials in 15 minutes"
+            description: "Elevated denial volume detected. Check audit logs for caller details."
+
+    - name: kubenexus.scaling
+      interval: 60s
+      rules:
+        - alert: KubeNexusHPAMaxedOut
+          expr: |
+            kube_horizontalpodautoscaler_status_current_replicas{namespace="platform-mcp", horizontalpodautoscaler="kubenexus"}
+            >= kube_horizontalpodautoscaler_spec_max_replicas{namespace="platform-mcp", horizontalpodautoscaler="kubenexus"}
+          for: 15m
+          labels:
+            severity: warning
+            team: platform-engineering
+          annotations:
+            summary: "KubeNexus HPA is at max replicas"
+            description: "HPA has been at {{ $value }} replicas (max) for 15 minutes. Consider increasing maxReplicas."

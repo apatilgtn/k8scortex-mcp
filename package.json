@@ -1,0 +1,80 @@
+{
+  "name": "k8scortex-mcp",
+  "version": "1.0.1",
+  "description": "Production-grade MCP server for Kubernetes — 75 tools across GKE, AKS, EKS, OpenShift and Minikube with RBAC, audit logging, GitOps (ArgoCD + Flux), and multi-cluster support",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "k8scortex-mcp": "./dist/stdio.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "kubernetes",
+    "k8s",
+    "kubectl",
+    "claude",
+    "ai-agent",
+    "gitops",
+    "flux",
+    "fluxcd",
+    "argocd",
+    "devops",
+    "platform-engineering",
+    "gke",
+    "aks",
+    "eks",
+    "openshift",
+    "helm",
+    "kustomize",
+    "multicluster"
+  ],
+  "author": "apatilgtn",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": ""
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint . --ext .ts",
+    "test": "vitest run tests/roles.test.ts",
+    "test:auth": "vitest run tests/auth-audit.test.ts",
+    "test:e2e:minikube:all": "MCP_URL=http://localhost:3006/mcp npx tsx tests/e2e-all-63-minikube.ts",
+    "sbom": "cyclonedx-npm --output-format json --output-file sbom.json",
+    "release:gate": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "start": "node dist/index.js",
+    "stdio": "node dist/stdio.js",
+    "dev": "tsx src/index.ts",
+    "prepublishOnly": "npm run release:gate"
+  },
+  "dependencies": {
+    "@kubernetes/client-node": "^1.4.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "jwks-rsa": "^4.0.1"
+  },
+  "devDependencies": {
+    "@cyclonedx/cyclonedx-npm": "^4.2.1",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^25.6.0",
+    "@typescript-eslint/parser": "^8.46.1",
+    "eslint": "^9.38.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "vitest": "^3.2.4"
+  }
+}

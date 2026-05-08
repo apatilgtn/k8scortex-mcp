@@ -1,0 +1,120 @@
+name: E2E + Security Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+jobs:
+  # ── Unit + auth integration tests (no cluster required) ────────────────────
+  unit-and-auth:
+    name: Unit tests + C-07/C-08 auth integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Unit tests (roles)
+        run: npm test
+
+      - name: Auth + audit integration tests (C-07 / C-08)
+        run: npm run test:auth
+
+  # ── E2E matrix on Minikube (63 tools) ──────────────────────────────────────
+  e2e-minikube:
+    name: 63-tool E2E matrix on Minikube
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: azure/setup-kubectl@v4
+
+      - name: Start minikube
+        uses: medyagh/setup-minikube@latest
+        with:
+          driver: docker
+          minikube-version: latest
+
+      - name: Enable metrics-server
+        run: minikube addons enable metrics-server
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Apply E2E fixtures
+        run: |
+          kubectl apply -f tests/fixtures/ --validate=false || true
+          sleep 5
+
+      - name: Start MCP server
+        run: |
+          DISABLE_AUTH=true PORT=3006 node dist/index.js > /tmp/kubenexus.log 2>&1 &
+          echo $! > /tmp/kubenexus.pid
+          sleep 6
+
+      - name: Run full 63-tool matrix E2E
+        run: npm run test:e2e:minikube:all
+
+      - name: Stop MCP server
+        if: always()
+        run: |
+          [ -f /tmp/kubenexus.pid ] && kill $(cat /tmp/kubenexus.pid) || true
+
+      - name: Upload server log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubenexus-server-log
+          path: /tmp/kubenexus.log
+
+  # ── SBOM generation (C-11) ──────────────────────────────────────────────────
+  sbom:
+    name: Generate SBOM (C-11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [unit-and-auth, e2e-minikube]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate CycloneDX SBOM
+        run: npm run sbom
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
