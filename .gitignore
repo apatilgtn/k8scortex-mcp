@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# Build output (committed intentionally for npm — dist/ is included)
+*.tgz
+
+# Internal planning & validation docs
+K8sCortex_*.md
+K8sCortex_*.txt
+K8sCortex_*.html
+docs/adrs/
+docs/docx/
+docs/market-gap-plan-may-2026.md
+docs/tier1-implementation-log-may-2026.md
+
+# Generated artifacts
+audit.log
+sbom.json
+
+# Local env
+.env
+.env.*
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
