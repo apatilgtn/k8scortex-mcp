@@ -97,6 +97,17 @@ app.get("/health", (req, res) => {
   res.status(200).send("OK");
 });
 
+app.get("/.well-known/mcp/server-card.json", (req, res) => {
+  res.json({
+    name: "K8sCortex",
+    version: "1.0.2",
+    description: "Production-grade MCP server for Kubernetes — 75 tools across GKE, AKS, EKS, OpenShift and Minikube with RBAC, audit logging, GitOps (ArgoCD + Flux), and multi-cluster support",
+    homepage: "https://github.com/apatilgtn/k8scortex-mcp",
+    transport: ["streamable-http", "sse"],
+    capabilities: { tools: {} },
+  });
+});
+
 // StreamableHTTP transport (used by Smithery and newer MCP clients)
 app.post("/mcp", authenticateToken, async (req, res) => {
   try {
