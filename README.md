@@ -1,6 +1,8 @@
 # K8sCortex — Kubernetes MCP Server
 
 [![smithery badge](https://smithery.ai/badge/apatil0431/k8scortex-mcp)](https://smithery.ai/server/apatil0431/k8scortex-mcp)
+[![npm version](https://badge.fury.io/js/k8scortex-mcp.svg)](https://www.npmjs.com/package/k8scortex-mcp)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > A production-grade Model Context Protocol (MCP) server that gives developers, AI agents, and automation pipelines a single, secure, natural-language interface to Kubernetes — across any cloud, any cluster, any team.
 
@@ -17,6 +19,18 @@
 - **Dry-run safety** — destructive tools default to simulation mode
 - **Generic read coverage** — list/get support for resources outside curated write paths to avoid troubleshooting dead-ends
 
+## Install via npx (Fastest)
+
+```bash
+npx k8scortex-mcp
+```
+
+Or install globally:
+
+```bash
+npm install -g k8scortex-mcp
+```
+
 ## Quick Start
 
 ### Prerequisites
@@ -29,7 +43,7 @@
 
 ```bash
 # Clone
-git clone https://github.com/your-org/k8scortex-mcp.git
+git clone https://github.com/apatilgtn/k8scortex-mcp.git
 cd k8scortex-mcp
 
 # Install
