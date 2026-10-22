@@ -10,12 +10,16 @@ startCommand:
     properties:
       kubeconfig:
         type: string
-        description: Path to your kubeconfig file (defaults to ~/.kube/config)
+        description: Path to your kubeconfig file (defaults to ~/.kube/config); each context becomes a cluster
         default: ""
-      disableAuth:
-        type: boolean
-        description: Disable JWT authentication (recommended for local use)
-        default: true
+      clustersConfig:
+        type: string
+        description: Optional path to a cluster registry JSON file (kubeconfig, EKS, GKE, Key Vault)
+        default: ""
+      roles:
+        type: string
+        description: Roles for this session, e.g. developer for read-only tools
+        default: platform-engineer
     required: []
   commandFunction: |-
     (config) => ({
@@ -23,6 +27,7 @@ startCommand:
       args: ["-y", "k8scortex-mcp"],
       env: {
         KUBECONFIG: config.kubeconfig || "",
-        DISABLE_AUTH: config.disableAuth !== false ? "true" : "false"
+        CLUSTERS_CONFIG: config.clustersConfig || "",
+        K8SCORTEX_STDIO_ROLES: config.roles || "platform-engineer"
       }
     })

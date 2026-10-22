@@ -1,5 +1,35 @@
 # Changelog
 
+## v1.1.0 - October 22, 2026
+
+### Multi-cloud
+
+- Pluggable cluster providers: kubeconfig contexts, Amazon EKS (STS-presigned tokens via IRSA / Pod Identity, optional role assumption), Google GKE (Application Default Credentials / Workload Identity) and Azure Key Vault
+- `CLUSTERS_CONFIG` registry file mixes providers with labels, a default cluster and per-cluster policies
+- Every kubeconfig context is now a cluster in local mode; previously the `cluster` argument was ignored when `DISABLE_AUTH=true`
+- Per-cluster policies (`minRole`, `denyTools`, matched by name glob or labels) that can only tighten access; `compare_clusters` checks both clusters
+- Mutating tools require an explicit `cluster` when more than one cluster is registered
+- `list_clusters` filters by cloud, region and labels; `get_cluster_info` reports Kubernetes version and detected platform (EKS, GKE, AKS, OpenShift)
+
+### Security
+
+- Legacy SSE transport fixed: one transport per session (a second client used to take over the first one's session) and message bodies are parsed correctly again
+- HTTP sessions are bound to the authenticated user and idle StreamableHTTP sessions expire
+- Tool calls without an authenticated user are denied instead of running as `platform-engineer`
+- Generic OIDC (`OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_ROLES_CLAIM`, `OIDC_ROLE_MAP`) with issuer and algorithm checks; the server refuses to start with auth enabled but unconfigured
+- Secret values are redacted from audit logs; audit records include the resolved cluster and provider
+- Generic read tools no longer expose secret-bearing resources and respect the `get_configmap` role for configmaps
+- `@modelcontextprotocol/sdk` upgraded to 1.32.1
+
+### Breaking changes
+
+- HTTP mode exits at startup unless `OIDC_ISSUER`/`OIDC_AUDIENCE` or `ENTRA_TENANT_ID`/`ENTRA_CLIENT_ID` is set (or `DISABLE_AUTH=true`)
+- `DISABLE_AUTH` only controls authentication; the cluster source is chosen by `CLUSTERS_CONFIG`, `AZURE_KEYVAULT_URI` or kubeconfig
+- With the Key Vault index, clusters must be listed in the index; set `DEFAULT_CLUSTER` when relying on the implicit default
+- Stdio mode no longer needs `DISABLE_AUTH`; use `K8SCORTEX_STDIO_ROLES` to restrict the local session
+
+---
+
 ## v1.0.1 - May 8, 2026
 
 ### New tools

@@ -11,11 +11,12 @@
 ## Features
 
 - **Curated multi-domain toolset** across workload, deployment, configuration, observability, jobs, networking, GitOps, cluster admin, and generic read paths
-- **Multi-cluster routing** — target any registered cluster with a single `cluster` parameter
-- **Entra ID OIDC** authentication with per-tool RBAC (5-tier role hierarchy)
+- **Multi-cloud cluster providers** — kubeconfig contexts, Amazon EKS (IAM/IRSA), Google GKE (Workload Identity) and Azure Key Vault, mixed in one registry
+- **Multi-cluster routing** — target any registered cluster with a single `cluster` parameter; writes require an explicit cluster when several are registered
+- **Any OIDC identity provider** (Entra ID, Okta, Cognito, Keycloak, Google) with per-tool RBAC (5-tier role hierarchy) and per-cluster policies
 - **Structured audit logging** — every tool call recorded with caller identity, arguments, and outcome
 - **Dual transport** — SSE/HTTP for programmatic clients + stdio for Claude Desktop
-- **Azure Key Vault** integration for dynamic credential management with 5-minute TTL cache
+- **Short-lived credentials** — EKS and GKE tokens are minted on demand and cached only until they expire
 - **Dry-run safety** — destructive tools default to simulation mode
 - **Generic read coverage** — list/get support for resources outside curated write paths to avoid troubleshooting dead-ends
 
@@ -73,7 +74,6 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "node",
       "args": ["<path-to>/k8scortex-mcp/dist/stdio.js"],
       "env": {
-        "DISABLE_AUTH": "true",
         "KUBECONFIG": "~/.kube/config"
       }
     }
@@ -82,6 +82,74 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 ```
 
 Restart Claude Desktop. Ask: *"List all pods in the default namespace"*.
+
+Every context in your kubeconfig is available as a cluster, so you can ask *"Compare the web app's ArgoCD revision between kind-dev and prod-eks"*. Set `K8SCORTEX_STDIO_ROLES=developer` to give the local session read-only tools.
+
+---
+
+## Multi-cloud setup
+
+K8sCortex picks its cluster source from the environment:
+
+| Source | When | Clusters |
+|---|---|---|
+| `CLUSTERS_CONFIG=/path/clusters.json` | Set | Clusters listed in the file, across any providers |
+| Azure Key Vault | `AZURE_KEYVAULT_URI` set | The Key Vault cluster index |
+| kubeconfig | Otherwise (or `USE_LOCAL_KUBECONFIG=true`) | Every context in `KUBECONFIG` / `~/.kube/config`, or the in-cluster service account |
+
+`DEFAULT_CLUSTER` chooses the cluster used when a tool call names none. Read-only tools fall back to it; mutating tools require an explicit `cluster` whenever more than one cluster is registered.
+
+### Cluster registry file
+
+```json
+{
+  "defaultCluster": "dev",
+  "clusters": [
+    { "name": "dev", "provider": "kubeconfig", "context": "kind-dev", "labels": { "env": "dev" } },
+    { "name": "prod-eks", "provider": "eks", "region": "us-east-1", "eksClusterName": "prod",
+      "roleArn": "arn:aws:iam::111122223333:role/k8scortex", "labels": { "env": "prod" } },
+    { "name": "prod-gke", "provider": "gke", "project": "my-project", "location": "us-central1",
+      "gkeClusterName": "prod", "labels": { "env": "prod" } },
+    { "name": "prod-aks", "provider": "azure-keyvault", "cloud": "aks", "region": "australiaeast",
+      "keyVaultUri": "https://my-vault.vault.azure.net", "labels": { "env": "prod" } }
+  ],
+  "policies": [
+    { "labels": { "env": "prod" }, "minRole": "sre", "appliesTo": "mutating" },
+    { "match": "prod-*", "denyTools": ["drain_node", "delete_namespace"] }
+  ]
+}
+```
+
+| Provider | Credentials | Fields |
+|---|---|---|
+| `kubeconfig` | Whatever the context uses, including exec plugins (`aws eks get-token`, `gke-gcloud-auth-plugin`, `kubelogin`) | `context`, `kubeconfigPath` |
+| `eks` | Default AWS chain (IRSA, EKS Pod Identity, instance profile, env, SSO), optionally assuming `roleArn`; tokens are presigned STS URLs refreshed every 14 minutes | `region`, `eksClusterName`, `roleArn` |
+| `gke` | Application Default Credentials (GKE Workload Identity, service account, `gcloud auth application-default login`) | `project`, `location`, `gkeClusterName`, `usePrivateEndpoint` |
+| `azure-keyvault` | Managed identity; base64 kubeconfig in secret `kubeconfig-<name>` (or `secretName`) | `keyVaultUri`, `secretName` |
+
+The EKS and GKE providers use optional dependencies (`@aws-sdk/client-eks`, `@aws-sdk/credential-providers`, `@smithy/signature-v4`, `@aws-crypto/sha256-js`, `google-auth-library`) that npm installs by default. The identity needs `eks:DescribeCluster` plus an EKS access entry, or `container.clusters.get` plus Kubernetes RBAC on GKE.
+
+### Per-cluster policies
+
+Policies match clusters by name glob (`match`) and/or `labels`, and can only **tighten** the global role table:
+
+- `minRole` raises the role required on matching clusters (`appliesTo: "mutating"` limits it to write tools)
+- `denyTools` disables tools for everyone on matching clusters
+
+`compare_clusters` is checked against both clusters it reads.
+
+### Authentication
+
+HTTP mode refuses to start unless an identity provider is configured (or `DISABLE_AUTH=true`):
+
+| Variable | Description |
+|---|---|
+| `OIDC_ISSUER` | Issuer URL(s), comma-separated; JWKS is discovered from `/.well-known/openid-configuration` |
+| `OIDC_AUDIENCE` | Expected audience(s), comma-separated |
+| `OIDC_JWKS_URI` | Optional JWKS URL override |
+| `OIDC_ROLES_CLAIM` | Claim holding roles/groups (default `roles`; e.g. `groups`, `cognito:groups`, `realm_access.roles`) |
+| `OIDC_ROLE_MAP` | JSON map from IdP group names to K8sCortex roles, e.g. `{"k8s-admins":"platform-engineer"}` |
+| `ENTRA_TENANT_ID` / `ENTRA_CLIENT_ID` | Shorthand for Entra ID (sets issuer, audience and JWKS) |
 
 ---
 
@@ -146,25 +214,27 @@ Claude / Prism Agent / CI-CD
         ▼
 ┌──────────────────────────────┐
 │     K8sCortex MCP Server     │
-│  OIDC → RBAC → Tool → Audit │
+│  OIDC → RBAC → Policy → Tool │
+│            → Audit           │
 │         │                    │
-│   Cluster Store (Key Vault)  │
+│     Cluster Registry         │
+│ kubeconfig│EKS│GKE│KeyVault  │
 └──────────┬───────────────────┘
            │
-    ┌──────┼──────┐
-    ▼      ▼      ▼
-   AKS    EKS    GKE
+    ┌──────┼──────┬──────┐
+    ▼      ▼      ▼      ▼
+   AKS    EKS    GKE  OpenShift / local
 ```
 
 ---
 
 ## Security
 
-- **Authentication**: Entra ID OIDC tokens validated on every request
-- **Authorization**: Role-based tool access (`developer` → `platform-engineer`)
-- **Audit**: JSON-structured log per invocation with user, tool, args, status
+- **Authentication**: OIDC tokens (issuer, audience and signature) validated on every request; sessions are bound to the user that created them
+- **Authorization**: Role-based tool access (`developer` → `platform-engineer`), tightened per cluster by policies
+- **Audit**: JSON-structured log per invocation with user, tool, cluster, provider and outcome; secret values are redacted
 - **Network**: ClusterIP only — no public endpoint
-- **Credentials**: Key Vault with 5-minute TTL cache, no kubeconfigs on disk
+- **Credentials**: Short-lived EKS/GKE tokens or Key Vault kubeconfigs, cached only until expiry
 
 ---
 
@@ -172,14 +242,20 @@ Claude / Prism Agent / CI-CD
 
 ```
 src/
-├── index.ts              # Express SSE server
+├── index.ts              # HTTP server (StreamableHTTP + SSE)
 ├── stdio.ts              # Stdio entry point (Claude Desktop)
+├── server.ts             # Tool registry, authorization and dispatch
 ├── auth.ts               # OIDC middleware
-├── roles.ts              # RBAC role hierarchy
-├── audit.ts              # Audit logger
+├── roles.ts              # RBAC role hierarchy and per-cluster policies
+├── audit.ts              # Audit logger with redaction
 ├── context.ts            # AsyncLocalStorage user context
-├── cluster-store.ts      # Dynamic K8s client factory
-├── kubernetes.ts         # Client re-export
+├── cluster-store.ts      # Per-cluster K8s client cache
+├── clusters/
+│   ├── registry.ts       # Cluster registry and CLUSTERS_CONFIG loader
+│   ├── kubeconfig.ts     # kubeconfig contexts provider
+│   ├── eks.ts            # Amazon EKS provider
+│   ├── gke.ts            # Google GKE provider
+│   └── azure-keyvault.ts # Azure Key Vault provider
 └── tools/
     ├── workload.ts       # list_pods, get_pod_logs, describe_deployment, list_nodes
     ├── deployment.ts     # scale_deployment, restart_pod

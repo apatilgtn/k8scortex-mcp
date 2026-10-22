@@ -117,12 +117,24 @@ curl http://localhost:3000/mcp
 |---|---|---|---|
 | `PORT` | No | `3000` | HTTP listening port |
 | `DISABLE_AUTH` | No | `false` | Bypass OIDC auth (dev only — **never in prod**) |
-| `TENANT_ID` | Prod | — | Entra ID tenant ID for OIDC validation |
-| `CLIENT_ID` | Prod | — | Entra ID application client ID |
-| `AZURE_KEYVAULT_URI` | Prod | — | Key Vault URL (e.g. `https://kv-kubenexus.vault.azure.net`) |
+| `OIDC_ISSUER` / `OIDC_AUDIENCE` | Prod* | — | Generic OIDC issuer and audience (comma-separated lists allowed) |
+| `OIDC_JWKS_URI` | No | discovered | JWKS URL override |
+| `OIDC_ROLES_CLAIM` | No | `roles` | Claim holding roles or groups (`groups`, `cognito:groups`, `realm_access.roles`) |
+| `OIDC_ROLE_MAP` | No | — | JSON map from IdP group names to K8sCortex roles |
+| `ENTRA_TENANT_ID` | Prod* | — | Entra ID tenant ID (alternative to `OIDC_ISSUER`) |
+| `ENTRA_CLIENT_ID` | Prod* | — | Entra ID application client ID (alternative to `OIDC_AUDIENCE`) |
+| `SESSION_IDLE_TTL_MS` | No | `1800000` | Idle timeout for StreamableHTTP sessions |
+| `CLUSTERS_CONFIG` | No | — | Path to a cluster registry JSON file (providers, labels, default cluster, policies) |
+| `DEFAULT_CLUSTER` | No | — | Cluster used when a tool call names none |
+| `USE_LOCAL_KUBECONFIG` | No | `false` | Use kubeconfig contexts even when `AZURE_KEYVAULT_URI` is set |
+| `AZURE_KEYVAULT_URI` | No | — | Key Vault URL (e.g. `https://kv-kubenexus.vault.azure.net`); enables the Key Vault cluster index |
 | `KUBECONFIG_SECRET_PREFIX` | No | `kubeconfig-` | Key Vault secret name prefix for cluster kubeconfigs |
 | `CLUSTER_REGISTRY_SECRET` | No | `kubenexus-cluster-index` | Key Vault secret holding the cluster index JSON |
 | `AUDIT_LOG_FILE` | No | `./audit.log` | Local file path for audit log append |
+
+\* HTTP mode refuses to start unless `OIDC_ISSUER`+`OIDC_AUDIENCE` or `ENTRA_TENANT_ID`+`ENTRA_CLIENT_ID` is set (or `DISABLE_AUTH=true`).
+
+With the Key Vault index, every cluster a tool targets must appear in the index; set `DEFAULT_CLUSTER` if callers rely on the implicit default cluster. See the README's *Multi-cloud setup* section for the `CLUSTERS_CONFIG` format, EKS/GKE providers and per-cluster policies.
 
 ### Key Vault Secrets
 

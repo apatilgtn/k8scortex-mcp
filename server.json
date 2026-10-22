@@ -6,26 +6,33 @@
     "url": "https://github.com/apatilgtn/k8scortex-mcp",
     "source": "github"
   },
-  "version": "1.0.2",
+  "version": "1.1.0",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "k8scortex-mcp",
-      "version": "1.0.2",
+      "version": "1.1.0",
       "transport": {
         "type": "stdio"
       },
       "environmentVariables": [
         {
           "name": "KUBECONFIG",
-          "description": "Path to your kubeconfig file. Defaults to ~/.kube/config if not set.",
+          "description": "Path to your kubeconfig file. Each context becomes a cluster. Defaults to ~/.kube/config.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
         },
         {
-          "name": "DISABLE_AUTH",
-          "description": "Set to 'true' to disable JWT authentication (recommended for local use).",
+          "name": "CLUSTERS_CONFIG",
+          "description": "Optional path to a cluster registry JSON file mixing kubeconfig, EKS, GKE and Key Vault clusters.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "K8SCORTEX_STDIO_ROLES",
+          "description": "Roles for the local session, e.g. 'developer' for read-only tools. Defaults to platform-engineer.",
           "isRequired": false,
           "isSecret": false,
           "format": "string"
