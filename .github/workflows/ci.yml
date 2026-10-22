@@ -1,0 +1,104 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 6 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Lint, typecheck, unit tests, build, auth integration tests ─────────────
+  release-gate:
+    name: Release gate (lint, typecheck, unit, build, auth)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Release gate
+        run: npm run release:gate
+
+  # ── End-to-end matrix on two KWOK clusters (all tools + scenarios) ─────────
+  e2e-kwok:
+    name: E2E matrix on KWOK (GKE-like + EKS-like clusters)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      KWOK_VERSION: v0.7.0
+      RESULTS_FILE: e2e-results.json
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.33.1
+
+      - name: Install kwokctl
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          for bin in kwokctl kwok; do
+            curl -fsSLo "$HOME/.local/bin/$bin" "https://github.com/kubernetes-sigs/kwok/releases/download/${KWOK_VERSION}/${bin}-linux-amd64"
+            chmod +x "$HOME/.local/bin/$bin"
+          done
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create clusters, build and run the matrix
+        run: npm run test:e2e:kwok
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-results
+          path: e2e-results.json
+          if-no-files-found: warn
+
+  # ── SBOM generation (C-11) ──────────────────────────────────────────────────
+  sbom:
+    name: Generate SBOM (C-11)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [release-gate, e2e-kwok]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate CycloneDX SBOM
+        run: npm run sbom
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
