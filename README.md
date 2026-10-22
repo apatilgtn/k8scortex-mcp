@@ -1,6 +1,6 @@
 # K8sCortex — Kubernetes MCP Server
 
-[![smithery badge](https://smithery.ai/badge/apatil0431/k8scortex-mcp)](https://smithery.ai/server/apatil0431/k8scortex-mcp)
+[![LightNow capabilities](https://lightnow.ai/badge/io.github.apatilgtn/k8scortex-mcp)](https://lightnow.ai/servers/io.github.apatilgtn/k8scortex-mcp)
 [![npm version](https://badge.fury.io/js/k8scortex-mcp.svg)](https://www.npmjs.com/package/k8scortex-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
