@@ -1,4 +1,6 @@
 // ADR 003: Role Model Definitions
+import type { ClusterEntry, ClusterPolicy } from './clusters/types.js';
+
 export type Role = 'developer' | 'team-lead' | 'release-manager' | 'sre' | 'platform-engineer' | 'ci-pipeline';
 
 const ROLE_HIERARCHY: Record<Role, number> = {
@@ -98,6 +100,13 @@ export const TOOL_ROLE_REQUIREMENTS: Record<string, Role> = {
   'remove_taint': 'platform-engineer',
 };
 
+const MUTATING_TOOL_PATTERN = /^(create|update|delete|scale|restart|suspend|resume|sync|set|cordon|uncordon|drain|taint|remove)_|^rollout_undo$/;
+
+/** True for tools that change cluster state (including their dry-run mode). */
+export function isMutatingTool(toolName: string): boolean {
+  return MUTATING_TOOL_PATTERN.test(toolName);
+}
+
 /**
  * Checks if the user's roles from Entra ID satisfy the tool's requirement.
  */
@@ -117,4 +126,42 @@ export function isAuthorized(userRoles: string[] = [], toolName: string): boolea
     const userLevel = ROLE_HIERARCHY[role as Role] || 0;
     return userLevel >= requiredLevel;
   });
+}
+
+export function isKnownRole(role: string): role is Role {
+  return Object.prototype.hasOwnProperty.call(ROLE_HIERARCHY, role);
+}
+
+function globToRegExp(glob: string): RegExp {
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${escaped}$`);
+}
+
+function policyMatches(policy: ClusterPolicy, cluster: Pick<ClusterEntry, 'name' | 'labels'>): boolean {
+  if (policy.match && !globToRegExp(policy.match).test(cluster.name)) return false;
+  return Object.entries(policy.labels ?? {}).every(([k, v]) => cluster.labels?.[k] === v);
+}
+
+/**
+ * Applies per-cluster policies on top of the global role table. Policies can only remove access:
+ * denyTools blocks a tool outright, minRole raises the role needed on matching clusters.
+ */
+export function checkClusterPolicies(
+  userRoles: string[] = [],
+  toolName: string,
+  cluster: Pick<ClusterEntry, 'name' | 'labels'>,
+  policies: ClusterPolicy[] = []
+): { allowed: true } | { allowed: false; reason: string } {
+  const userLevel = Math.max(0, ...userRoles.map(r => (isKnownRole(r) ? ROLE_HIERARCHY[r] : 0)));
+  for (const policy of policies) {
+    if (!policyMatches(policy, cluster)) continue;
+    if (policy.denyTools?.includes(toolName)) {
+      return { allowed: false, reason: `${toolName} is disabled on cluster '${cluster.name}' by policy` };
+    }
+    const applies = policy.appliesTo !== 'mutating' || isMutatingTool(toolName);
+    if (policy.minRole && applies && isKnownRole(policy.minRole) && userLevel < ROLE_HIERARCHY[policy.minRole]) {
+      return { allowed: false, reason: `${toolName} on cluster '${cluster.name}' requires role ${policy.minRole} or higher` };
+    }
+  }
+  return { allowed: true };
 }

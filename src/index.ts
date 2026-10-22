@@ -4,11 +4,13 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { authenticateToken, loadAuthConfig } from "./auth.js";
 import { userContext } from "./context.js";
+import { getClusterRegistry } from "./cluster-store.js";
 import { buildMcpServer, allTools, SERVER_VERSION } from "./server.js";
 
 // Fail fast on missing identity provider configuration instead of accepting unverifiable tokens
 try {
   loadAuthConfig();
+  getClusterRegistry();
 } catch (err: any) {
   console.error(`K8sCortex startup aborted: ${err.message}`);
   process.exit(1);

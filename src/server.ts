@@ -18,7 +18,9 @@ import { clusterAdminTools, handleClusterAdminTool } from "./tools/cluster_admin
 import { gitopsTools, handleGitOpsTool } from "./tools/gitops.js";
 import { genericReadTools, handleGenericReadTool } from "./tools/generic_read.js";
 import { cloudAwarenessTools, handleCloudAwarenessTool } from "./tools/cloud_awareness.js";
-import { isAuthorized } from "./roles.js";
+import { checkClusterPolicies, isAuthorized, isMutatingTool } from "./roles.js";
+import { getClusterRegistry } from "./cluster-store.js";
+import { ClusterEntry } from "./clusters/types.js";
 import { logAuditAction } from "./audit.js";
 import { UserContext, userContext } from "./context.js";
 
@@ -50,6 +52,13 @@ const toolHandlers = new Map<string, ToolHandler>(
   toolGroups.flatMap(([tools, handler]) => tools.map(t => [t.name, handler] as const))
 );
 
+/** The cluster names a tool call targets (undefined means the default cluster). */
+function targetClusters(name: string, args: any): Array<string | undefined> {
+  if (name === "list_clusters") return [];
+  if (name === "compare_clusters") return [args.clusterA, args.clusterB];
+  return [args.cluster];
+}
+
 /**
  * Builds an MCP server exposing all K8sCortex tools.
  * getUser returns the caller for the current request; undefined means unauthenticated and every call is denied.
@@ -67,7 +76,6 @@ export function buildMcpServer(getUser: () => UserContext | undefined): Server {
     const args: any = request.params.arguments ?? {};
     const user = getUser();
     const userOid = user?.oid || "anonymous";
-    const cluster = args.cluster || "default";
 
     if (!user || !isAuthorized(user.roles, name)) {
       logAuditAction(userOid, name, args, "denied", user ? "User lacks required role" : "No authenticated user");
@@ -77,10 +85,38 @@ export function buildMcpServer(getUser: () => UserContext | undefined): Server {
     const handler = toolHandlers.get(name);
     if (!handler) throw new Error(`Tool not found: ${name}`);
 
+    // Resolve target clusters for per-cluster policies and the audit record. Resolution errors
+    // (e.g. an unknown cluster) are left for the tool itself to report.
+    const registry = getClusterRegistry();
+    const targets = (await Promise.all(
+      targetClusters(name, args).map(c => registry.resolve(c).catch(() => undefined))
+    )).filter((t): t is ClusterEntry => !!t);
+    const auditArgs = {
+      ...args,
+      _cluster: targets.map(t => t.name).join(",") || args.cluster || "default",
+      ...(targets.length ? { _provider: [...new Set(targets.map(t => t.provider))].join(",") } : {}),
+    };
+
+    for (const target of targets) {
+      const decision = checkClusterPolicies(user.roles, name, target, registry.policies);
+      if (!decision.allowed) {
+        logAuditAction(userOid, name, auditArgs, "denied", decision.reason);
+        throw new Error(`Unauthorized to invoke tool: ${name}. ${decision.reason}`);
+      }
+    }
+
     let result: any;
     let status: "success" | "failure" = "success";
     let errorMessage: string | undefined;
     try {
+      // Writes must never silently land on whichever cluster happens to be the default
+      if (isMutatingTool(name) && !args.cluster) {
+        const clusters = await registry.list();
+        if (clusters.length > 1) {
+          throw new Error(`${name} changes cluster state, so 'cluster' must be specified explicitly. Registered clusters: ${clusters.map(c => c.name).join(", ")}`);
+        }
+      }
+
       // Run the handler inside the caller's context so tools can make per-user decisions
       result = await userContext.run(user, () => handler(name, args));
       if (result?.isError) {
@@ -92,7 +128,7 @@ export function buildMcpServer(getUser: () => UserContext | undefined): Server {
       errorMessage = error.message;
       throw error;
     } finally {
-      logAuditAction(userOid, name, { ...args, _cluster: cluster }, status, errorMessage);
+      logAuditAction(userOid, name, auditArgs, status, errorMessage);
     }
     return result;
   });

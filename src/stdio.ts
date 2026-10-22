@@ -2,6 +2,7 @@
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { buildMcpServer } from "./server.js";
 import { UserContext } from "./context.js";
+import { getClusterRegistry } from "./cluster-store.js";
 
 // Stdio mode: auth is not enforced — Claude Desktop manages process identity.
 // All tool calls are attributed to the local user running the process.
@@ -14,6 +15,8 @@ const LOCAL_USER: UserContext = {
 const server = buildMcpServer(() => LOCAL_USER);
 
 async function main() {
+  // Fail fast on an invalid CLUSTERS_CONFIG rather than on the first tool call
+  getClusterRegistry();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // Log to stderr so it doesn't interfere with the MCP stdio protocol

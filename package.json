@@ -77,5 +77,12 @@
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vitest": "^3.2.4"
+  },
+  "optionalDependencies": {
+    "@aws-crypto/sha256-js": "^5.2.0",
+    "@aws-sdk/client-eks": "^3.1155.0",
+    "@aws-sdk/credential-providers": "^3.1155.0",
+    "@smithy/signature-v4": "^5.7.4",
+    "google-auth-library": "^11.3.1"
   }
 }

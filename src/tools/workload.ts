@@ -132,7 +132,7 @@ function formatPodAge(creationTimestamp?: string): string {
 
 export async function handleWorkloadTool(name: string, args: any) {
   const { cluster = "default" } = args;
-  const { coreV1Api, appsV1Api } = await getK8sClientForCluster(cluster);
+  const { coreV1Api, appsV1Api, kubeConfig } = await getK8sClientForCluster(cluster);
 
   try {
     switch (name) {
@@ -216,15 +216,13 @@ export async function handleWorkloadTool(name: string, args: any) {
           return { content: [{ type: "text", text: res as unknown as string }] };
         } catch (err: any) {
           // Some clusters return pod log responses without content-type headers.
-          // Fall back to the stream-based log reader for local-kubeconfig mode.
+          // Fall back to the stream-based log reader against the same cluster.
           const msg = err?.message || "";
-          if (!msg.includes("No Content-Type defined") || (process.env.DISABLE_AUTH !== "true" && process.env.USE_LOCAL_KUBECONFIG !== "true")) {
+          if (!msg.includes("No Content-Type defined")) {
             throw err;
           }
 
-          const kc = new k8s.KubeConfig();
-          kc.loadFromDefault();
-          const log = new k8s.Log(kc);
+          const log = new k8s.Log(kubeConfig);
           const stream = new PassThrough();
           const chunks: Buffer[] = [];
 
