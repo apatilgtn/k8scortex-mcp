@@ -200,6 +200,10 @@ function fluxGroupConfig(resourceType) {
             throw new Error(`Unknown Flux resource type: ${resourceType}`);
     }
 }
+/** HelmRelease v2 records the deployed chart in status.history; v2beta1 used lastAppliedRevision. */
+function helmReleaseRevision(hr) {
+    return hr.status?.history?.[0]?.chartVersion || hr.status?.lastAppliedRevision || hr.status?.lastAttemptedRevision || "Unknown";
+}
 async function listFluxResources(customObjectsApi, group, version, plural, namespace) {
     if (namespace) {
         const res = await customObjectsApi.listNamespacedCustomObject({ group, version, namespace, plural });
@@ -354,7 +358,7 @@ export async function handleGitOpsTool(name, args) {
                     version: hr.spec?.chart?.spec?.version || "*",
                     suspended: hr.spec?.suspend || false,
                     ready: fluxReadyCondition(hr.status?.conditions).status || "Unknown",
-                    lastAppliedRevision: hr.status?.lastAppliedRevision || "Unknown",
+                    lastAppliedRevision: helmReleaseRevision(hr),
                     helmVersion: hr.spec?.chart?.spec?.sourceRef?.name || "Unknown",
                 }));
                 return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
@@ -374,7 +378,7 @@ export async function handleGitOpsTool(name, args) {
                     sourceRef: `${hr.spec?.chart?.spec?.sourceRef?.kind}/${hr.spec?.chart?.spec?.sourceRef?.name}`,
                     releaseName: hr.spec?.releaseName || hr.metadata.name,
                     targetNamespace: hr.spec?.targetNamespace || hr.metadata.namespace,
-                    lastAppliedRevision: hr.status?.lastAppliedRevision || "Unknown",
+                    lastAppliedRevision: helmReleaseRevision(hr),
                     lastAttemptedRevision: hr.status?.lastAttemptedRevision || "Unknown",
                     conditions: (hr.status?.conditions || []).map((c) => ({
                         type: c.type, status: c.status, reason: c.reason, message: c.message, lastTransitionTime: c.lastTransitionTime,

@@ -21,6 +21,17 @@
 - Generic read tools no longer expose secret-bearing resources and respect the `get_configmap` role for configmaps
 - `@modelcontextprotocol/sdk` upgraded to 1.32.1
 
+### Fixes found by the KWOK end-to-end matrix
+
+- `scale_deployment`, `cordon_node`, `uncordon_node`, `taint_node`, `remove_taint` and `drain_node` failed with HTTP 400 whenever `dryRun` was false: their merge-patch bodies were sent as JSON Patch
+- `taint_node` replaced all of a node's taints with the new one; it now keeps the others
+- `list_limit_ranges` always reported `default: null`
+- `list_flux_helm_releases` / `get_flux_helm_release` reported `lastAppliedRevision: "Unknown"` for Flux HelmRelease v2; they now read `status.history`
+
+### Testing
+
+- New `npm run test:e2e:kwok`: two KWOK clusters (GKE-like and EKS-like) with Flux, Argo CD, VPA, metrics and log fixtures; 164 scenarios covering all 75 tools, multi-cluster routing, registry policies, OIDC over StreamableHTTP and SSE, session isolation, audit redaction and startup checks
+
 ### Breaking changes
 
 - HTTP mode exits at startup unless `OIDC_ISSUER`/`OIDC_AUDIENCE` or `ENTRA_TENANT_ID`/`ENTRA_CLIENT_ID` is set (or `DISABLE_AUTH=true`)

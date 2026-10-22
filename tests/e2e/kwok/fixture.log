@@ -1,0 +1,3 @@
+2026-10-22T11:00:00.000000000Z stdout F fixture app started
+2026-10-22T11:00:01.000000000Z stdout F listening on :80
+2026-10-22T11:00:02.000000000Z stderr F WARN slow upstream response 1200ms

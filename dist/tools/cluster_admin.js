@@ -1,4 +1,7 @@
+import { PatchStrategy, setHeaderOptions } from "@kubernetes/client-node";
 import { getK8sClientForCluster } from "../cluster-store.js";
+// Patch bodies below are partial objects, so they must be sent as merge patches (the client defaults to JSON Patch)
+const MERGE_PATCH = setHeaderOptions("Content-Type", PatchStrategy.MergePatch);
 const CLUSTER_PROP = { cluster: { type: "string", description: "Target cluster name (default: 'default')" } };
 export const clusterAdminTools = [
     {
@@ -83,7 +86,7 @@ export async function handleClusterAdminTool(name, args) {
                     return { content: [{ type: "text", text: `[DRY RUN] Would cordon node ${args.nodeName}.` }] };
                 }
                 const patch = { spec: { unschedulable: true } };
-                await coreV1Api.patchNode({ name: args.nodeName, body: patch });
+                await coreV1Api.patchNode({ name: args.nodeName, body: patch }, MERGE_PATCH);
                 return { content: [{ type: "text", text: `Successfully cordoned node ${args.nodeName}.` }] };
             }
             case "uncordon_node": {
@@ -92,7 +95,7 @@ export async function handleClusterAdminTool(name, args) {
                     return { content: [{ type: "text", text: `[DRY RUN] Would uncordon node ${args.nodeName}.` }] };
                 }
                 const patch = { spec: { unschedulable: false } };
-                await coreV1Api.patchNode({ name: args.nodeName, body: patch });
+                await coreV1Api.patchNode({ name: args.nodeName, body: patch }, MERGE_PATCH);
                 return { content: [{ type: "text", text: `Successfully uncordoned node ${args.nodeName}.` }] };
             }
             case "drain_node": {
@@ -102,7 +105,7 @@ export async function handleClusterAdminTool(name, args) {
                 }
                 // 1. Cordon the node
                 const cordPatch = { spec: { unschedulable: true } };
-                await coreV1Api.patchNode({ name: args.nodeName, body: cordPatch });
+                await coreV1Api.patchNode({ name: args.nodeName, body: cordPatch }, MERGE_PATCH);
                 // 2. Find pods on the node
                 const podsRes = await coreV1Api.listPodForAllNamespaces({ fieldSelector: `spec.nodeName=${args.nodeName}` });
                 const podsToEvict = podsRes.items.filter((pod) => {
@@ -152,8 +155,11 @@ export async function handleClusterAdminTool(name, args) {
                 if (dryRun) {
                     return { content: [{ type: "text", text: `[DRY RUN] Would add taint ${args.key}=${args.value}:${args.effect} to node ${args.nodeName}.` }] };
                 }
-                const patch = { spec: { taints: [{ key: args.key, value: args.value, effect: args.effect }] } };
-                await coreV1Api.patchNode({ name: args.nodeName, body: patch });
+                // Merge patches replace lists wholesale, so keep the node's other taints
+                const node = await coreV1Api.readNode({ name: args.nodeName });
+                const others = (node.spec?.taints || []).filter((t) => !(t.key === args.key && t.effect === args.effect));
+                const patch = { spec: { taints: [...others, { key: args.key, value: args.value, effect: args.effect }] } };
+                await coreV1Api.patchNode({ name: args.nodeName, body: patch }, MERGE_PATCH);
                 return { content: [{ type: "text", text: `Successfully added taint ${args.key}=${args.value}:${args.effect} to node ${args.nodeName}.` }] };
             }
             case "remove_taint": {
@@ -165,7 +171,7 @@ export async function handleClusterAdminTool(name, args) {
                 const existing = node.spec?.taints || [];
                 const filtered = existing.filter((t) => t.key !== args.key);
                 const patch = { spec: { taints: filtered.length > 0 ? filtered : null } };
-                await coreV1Api.patchNode({ name: args.nodeName, body: patch });
+                await coreV1Api.patchNode({ name: args.nodeName, body: patch }, MERGE_PATCH);
                 return { content: [{ type: "text", text: `Successfully removed taint ${args.key} from node ${args.nodeName}.` }] };
             }
             default:

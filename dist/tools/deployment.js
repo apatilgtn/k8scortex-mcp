@@ -1,4 +1,7 @@
+import { PatchStrategy, setHeaderOptions } from "@kubernetes/client-node";
 import { getK8sClientForCluster } from "../cluster-store.js";
+// Patch bodies below are partial objects, so they must be sent as merge patches (the client defaults to JSON Patch)
+const MERGE_PATCH = setHeaderOptions("Content-Type", PatchStrategy.MergePatch);
 const CLUSTER_PROP = { cluster: { type: "string", description: "Target cluster name (default: 'default')" } };
 export const deploymentTools = [
     {
@@ -70,7 +73,7 @@ export async function handleDeploymentTool(name, args) {
                     return { content: [{ type: "text", text: `[DRY RUN] Would scale deployment ${deploymentName} in ${namespace} on cluster '${cluster}' to ${replicas} replicas.` }] };
                 }
                 const patch = { spec: { replicas } };
-                await appsV1Api.patchNamespacedDeployment({ name: deploymentName, namespace, body: patch });
+                await appsV1Api.patchNamespacedDeployment({ name: deploymentName, namespace, body: patch }, MERGE_PATCH);
                 return { content: [{ type: "text", text: `Successfully scaled deployment ${deploymentName} to ${replicas} replicas on cluster '${cluster}'.` }] };
             }
             case "rollout_status": {

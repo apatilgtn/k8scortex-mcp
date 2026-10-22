@@ -216,6 +216,11 @@ function fluxGroupConfig(resourceType: string): { group: string; version: string
   }
 }
 
+/** HelmRelease v2 records the deployed chart in status.history; v2beta1 used lastAppliedRevision. */
+function helmReleaseRevision(hr: any): string {
+  return hr.status?.history?.[0]?.chartVersion || hr.status?.lastAppliedRevision || hr.status?.lastAttemptedRevision || "Unknown";
+}
+
 async function listFluxResources(customObjectsApi: CustomObjectsApi, group: string, version: string, plural: string, namespace?: string): Promise<any[]> {
   if (namespace) {
     const res: any = await customObjectsApi.listNamespacedCustomObject({ group, version, namespace, plural });
@@ -372,7 +377,7 @@ export async function handleGitOpsTool(name: string, args: any): Promise<any> {
           version: hr.spec?.chart?.spec?.version || "*",
           suspended: hr.spec?.suspend || false,
           ready: fluxReadyCondition(hr.status?.conditions).status || "Unknown",
-          lastAppliedRevision: hr.status?.lastAppliedRevision || "Unknown",
+          lastAppliedRevision: helmReleaseRevision(hr),
           helmVersion: hr.spec?.chart?.spec?.sourceRef?.name || "Unknown",
         }));
         return { content: [{ type: "text", text: JSON.stringify(summary, null, 2) }] };
@@ -393,7 +398,7 @@ export async function handleGitOpsTool(name: string, args: any): Promise<any> {
           sourceRef: `${hr.spec?.chart?.spec?.sourceRef?.kind}/${hr.spec?.chart?.spec?.sourceRef?.name}`,
           releaseName: hr.spec?.releaseName || hr.metadata.name,
           targetNamespace: hr.spec?.targetNamespace || hr.metadata.namespace,
-          lastAppliedRevision: hr.status?.lastAppliedRevision || "Unknown",
+          lastAppliedRevision: helmReleaseRevision(hr),
           lastAttemptedRevision: hr.status?.lastAttemptedRevision || "Unknown",
           conditions: (hr.status?.conditions || []).map((c: any) => ({
             type: c.type, status: c.status, reason: c.reason, message: c.message, lastTransitionTime: c.lastTransitionTime,

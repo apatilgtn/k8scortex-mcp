@@ -454,7 +454,8 @@ export async function handleCloudAwarenessTool(name: string, args: any): Promise
           name: l.metadata?.name,
           limits: (l.spec?.limits || []).map((x: any) => ({
             type: x.type,
-            default: x.default || null,
+            // The generated client exposes LimitRangeItem.default as _default
+            default: x._default || x.default || null,
             defaultRequest: x.defaultRequest || null,
             min: x.min || null,
             max: x.max || null,

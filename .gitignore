@@ -31,3 +31,6 @@ sbom.json
 .idea/
 *.swp
 *.swo
+
+# E2E results
+e2e-results.json
