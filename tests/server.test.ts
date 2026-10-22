@@ -103,4 +103,10 @@ describe("MCP server", () => {
     const platform = await connect(admin);
     expect(await callText(platform, "drain_node", { nodeName: "n1", cluster: "prod" })).toMatch(/disabled on cluster 'prod'/);
   });
+
+  it("fails closed when policies exist and a target cluster cannot be resolved", async () => {
+    useClusters([{ name: "dev" }], { policies: [{ match: "prod", minRole: "sre" }] });
+    const client = await connect(admin);
+    expect(await callText(client, "list_pods", { namespace: "default", cluster: "prod" })).toMatch(/Unauthorized.*Unknown cluster 'prod'/);
+  });
 });

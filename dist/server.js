@@ -66,15 +66,21 @@ export function buildMcpServer(getUser) {
         const handler = toolHandlers.get(name);
         if (!handler)
             throw new Error(`Tool not found: ${name}`);
-        // Resolve target clusters for per-cluster policies and the audit record. Resolution errors
-        // (e.g. an unknown cluster) are left for the tool itself to report.
+        // Resolve target clusters for per-cluster policies and the audit record. Without policies,
+        // resolution errors (e.g. an unknown cluster) are left for the tool itself to report.
         const registry = getClusterRegistry();
-        const targets = (await Promise.all(targetClusters(name, args).map(c => registry.resolve(c).catch(() => undefined)))).filter((t) => !!t);
+        const resolutionErrors = [];
+        const targets = (await Promise.all(targetClusters(name, args).map(c => registry.resolve(c).catch((err) => { resolutionErrors.push(err.message); return undefined; })))).filter((t) => !!t);
         const auditArgs = {
             ...args,
             _cluster: targets.map(t => t.name).join(",") || args.cluster || "default",
             ...(targets.length ? { _provider: [...new Set(targets.map(t => t.provider))].join(",") } : {}),
         };
+        // Fail closed: a cluster whose policies cannot be evaluated is not accessible
+        if (registry.policies.length && resolutionErrors.length) {
+            logAuditAction(userOid, name, auditArgs, "denied", resolutionErrors[0]);
+            throw new Error(`Unauthorized to invoke tool: ${name}. ${resolutionErrors[0]}`);
+        }
         for (const target of targets) {
             const decision = checkClusterPolicies(user.roles, name, target, registry.policies);
             if (!decision.allowed) {
