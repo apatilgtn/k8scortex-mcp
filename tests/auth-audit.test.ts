@@ -230,3 +230,100 @@ describe('C-08: Audit log content assertions', () => {
     }
   });
 });
+
+// ── Session isolation ─────────────────────────────────────────────────────────
+
+/** Opens a raw SSE stream and returns the session ID from the initial endpoint event. */
+async function openRawSse(token: string): Promise<{ sessionId: string; abort: () => void }> {
+  const ac = new AbortController();
+  const res = await fetch(MCP_URL, { headers: { Authorization: `Bearer ${token}` }, signal: ac.signal });
+  const reader = res.body!.getReader();
+  let buffer = '';
+  while (!/sessionId=([\w-]+)/.test(buffer)) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += new TextDecoder().decode(value);
+  }
+  const sessionId = buffer.match(/sessionId=([\w-]+)/)![1];
+  return { sessionId, abort: () => ac.abort() };
+}
+
+describe('Session isolation between users', () => {
+  it('keeps concurrent SSE clients independent', async () => {
+    const devClient = await mcpClient(developerToken);
+    const adminClient = await mcpClient(adminToken);
+    try {
+      // Before the fix, the second connection replaced the first client's transport
+      await devClient.callTool({ name: 'list_pods', arguments: { namespace: 'kx-session-a' } });
+      await adminClient.callTool({ name: 'list_pods', arguments: { namespace: 'kx-session-b' } });
+    } catch { /* K8s errors are acceptable */ }
+    await devClient.close();
+    await adminClient.close();
+
+    const devEntry = readAuditLog().filter(e => (e['arguments'] as any)?.namespace === 'kx-session-a').at(-1);
+    const adminEntry = readAuditLog().filter(e => (e['arguments'] as any)?.namespace === 'kx-session-b').at(-1);
+    expect(devEntry?.['userOid']).toBe('test-developer');
+    expect(adminEntry?.['userOid']).toBe('test-admin');
+  });
+
+  it('rejects SSE messages posted to another user\'s session', async () => {
+    const { sessionId, abort } = await openRawSse(developerToken);
+    try {
+      const res = await fetch(`${BASE_URL}/messages?sessionId=${sessionId}`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+      });
+      expect(res.status).toBe(403);
+    } finally {
+      abort();
+    }
+  });
+
+  it('returns 404 for an unknown SSE session', async () => {
+    const res = await fetch(`${BASE_URL}/messages?sessionId=does-not-exist`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${developerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it('rejects StreamableHTTP requests that reuse another user\'s session', async () => {
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
+    const init = await fetch(MCP_URL, {
+      method: 'POST',
+      headers: { ...headers, Authorization: `Bearer ${developerToken}` },
+      body: JSON.stringify({
+        jsonrpc: '2.0', id: 1, method: 'initialize',
+        params: { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'auth-test', version: '1.0.0' } },
+      }),
+    });
+    expect(init.status).toBe(200);
+    const sessionId = init.headers.get('mcp-session-id');
+    expect(sessionId).toBeTruthy();
+    await init.body?.cancel();
+
+    const hijack = await fetch(MCP_URL, {
+      method: 'POST',
+      headers: { ...headers, Authorization: `Bearer ${adminToken}`, 'mcp-session-id': sessionId! },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list' }),
+    });
+    expect(hijack.status).toBe(403);
+  });
+});
+
+// ── Startup configuration ─────────────────────────────────────────────────────
+
+describe('Startup configuration', () => {
+  it('refuses to start when auth is enabled without an identity provider', async () => {
+    const env = { ...process.env, PORT: String(TEST_PORT + 1), DISABLE_AUTH: 'false' };
+    for (const key of ['TEST_JWT_SECRET', 'OIDC_ISSUER', 'OIDC_AUDIENCE', 'ENTRA_TENANT_ID', 'ENTRA_CLIENT_ID']) delete env[key];
+    const child = spawn('node', ['dist/index.js'], { env, stdio: 'pipe' });
+    let stderr = '';
+    child.stderr?.on('data', (d) => { stderr += d; });
+    const code = await new Promise<number | null>((resolve) => child.on('exit', resolve));
+    expect(code).toBe(1);
+    expect(stderr).toMatch(/OIDC_ISSUER/);
+  });
+});

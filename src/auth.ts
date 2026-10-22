@@ -1,70 +1,194 @@
 import jwt from 'jsonwebtoken';
-import jwksClient from 'jwks-rsa';
-import { Request, Response, NextFunction } from 'express';
-import { userContext } from './context.js';
+import jwksClient, { JwksClient } from 'jwks-rsa';
+import { Request, Response, NextFunction, RequestHandler } from 'express';
+import { userContext, UserContext } from './context.js';
 
-// Configure this with actual Entra ID tenant details via environment variables
-const TENANT_ID = process.env.ENTRA_TENANT_ID || 'common';
-const CLIENT_ID = process.env.ENTRA_CLIENT_ID || 'your-client-id';
+export interface OidcConfig {
+  issuer: string | string[];
+  audience: string | string[];
+  jwksUri?: string;
+  rolesClaim: string;
+  roleMap: Record<string, string>;
+}
 
-const client = jwksClient({
-  jwksUri: `https://login.microsoftonline.com/${TENANT_ID}/discovery/v2.0/keys`,
-  cache: true,
-  rateLimit: true,
-});
+export type AuthConfig =
+  | { mode: 'disabled' }
+  | { mode: 'test-secret'; secret: string; rolesClaim: string; roleMap: Record<string, string> }
+  | { mode: 'oidc'; oidc: OidcConfig };
 
-function getKey(header: jwt.JwtHeader, callback: jwt.SigningKeyCallback) {
-  client.getSigningKey(header.kid, (err, key) => {
-    if (err || !key) {
-      return callback(err);
-    }
-    const signingKey = key.getPublicKey();
-    callback(null, signingKey);
-  });
+const ASYMMETRIC_ALGORITHMS: jwt.Algorithm[] = ['RS256', 'RS384', 'RS512', 'PS256', 'PS384', 'PS512', 'ES256', 'ES384', 'ES512'];
+
+function splitList(value: string): string | string[] {
+  const parts = value.split(',').map(s => s.trim()).filter(Boolean);
+  return parts.length === 1 ? parts[0] : parts;
+}
+
+function parseRoleMap(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+  } catch { /* fall through */ }
+  throw new Error('OIDC_ROLE_MAP must be a JSON object mapping IdP role/group names to K8sCortex roles.');
+}
+
+/**
+ * Resolves the authentication mode from environment variables.
+ * Throws when auth is enabled but no identity provider is configured, so the
+ * server refuses to start rather than accepting tokens it cannot validate properly.
+ */
+export function loadAuthConfig(env: NodeJS.ProcessEnv = process.env): AuthConfig {
+  if (env.DISABLE_AUTH === 'true') return { mode: 'disabled' };
+
+  const rolesClaim = env.OIDC_ROLES_CLAIM || 'roles';
+  const roleMap = parseRoleMap(env.OIDC_ROLE_MAP);
+
+  // TEST_JWT_SECRET enables integration tests to sign tokens with a symmetric key
+  // without requiring a live JWKS endpoint. Never set this in production.
+  if (env.TEST_JWT_SECRET) return { mode: 'test-secret', secret: env.TEST_JWT_SECRET, rolesClaim, roleMap };
+
+  if (env.OIDC_ISSUER) {
+    if (!env.OIDC_AUDIENCE) throw new Error('OIDC_AUDIENCE must be set when OIDC_ISSUER is set.');
+    return {
+      mode: 'oidc',
+      oidc: {
+        issuer: splitList(env.OIDC_ISSUER),
+        audience: splitList(env.OIDC_AUDIENCE),
+        jwksUri: env.OIDC_JWKS_URI,
+        rolesClaim,
+        roleMap,
+      },
+    };
+  }
+
+  // Backwards-compatible Entra ID configuration
+  if (env.ENTRA_TENANT_ID && env.ENTRA_CLIENT_ID) {
+    const tenant = env.ENTRA_TENANT_ID;
+    return {
+      mode: 'oidc',
+      oidc: {
+        issuer: [`https://login.microsoftonline.com/${tenant}/v2.0`, `https://sts.windows.net/${tenant}/`],
+        audience: splitList(env.ENTRA_CLIENT_ID),
+        jwksUri: `https://login.microsoftonline.com/${tenant}/discovery/v2.0/keys`,
+        rolesClaim,
+        roleMap,
+      },
+    };
+  }
+
+  throw new Error(
+    'Authentication is enabled but not configured. Set OIDC_ISSUER and OIDC_AUDIENCE ' +
+    '(or ENTRA_TENANT_ID and ENTRA_CLIENT_ID), or DISABLE_AUTH=true for local development.'
+  );
+}
+
+function readClaim(claims: Record<string, any>, path: string): unknown {
+  // Claims such as "cognito:groups" or "https://example.com/roles" are looked up verbatim first
+  if (path in claims) return claims[path];
+  return path.split('.').reduce<any>((obj, key) => (obj == null ? undefined : obj[key]), claims);
+}
+
+/**
+ * Extracts K8sCortex roles from token claims, translating IdP group/role names via roleMap.
+ */
+export function extractRoles(claims: Record<string, any>, rolesClaim: string, roleMap: Record<string, string>): string[] {
+  const raw = readClaim(claims, rolesClaim);
+  const values = Array.isArray(raw) ? raw.map(String) : typeof raw === 'string' ? raw.split(/[\s,]+/).filter(Boolean) : [];
+  return [...new Set(values.map(v => roleMap[v] ?? v))];
+}
+
+function toUser(claims: Record<string, any>, rolesClaim: string, roleMap: Record<string, string>): UserContext {
+  return {
+    oid: String(claims.oid || claims.sub || 'unknown'),
+    roles: extractRoles(claims, rolesClaim, roleMap),
+  };
+}
+
+async function discoverJwksUri(issuer: string): Promise<string> {
+  const res = await fetch(`${issuer.replace(/\/$/, '')}/.well-known/openid-configuration`);
+  if (!res.ok) throw new Error(`OIDC discovery failed for ${issuer}: ${res.status}`);
+  const { jwks_uri } = await res.json() as { jwks_uri?: string };
+  if (!jwks_uri) throw new Error(`OIDC discovery document for ${issuer} has no jwks_uri`);
+  return jwks_uri;
 }
 
 // Add user to Express Request
 declare global {
   namespace Express {
     interface Request {
-      user?: any;
+      user?: UserContext;
     }
   }
 }
 
-export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
-  // Allow bypassing auth if testing locally (for Phase 1 & local dev)
-  if (process.env.DISABLE_AUTH === 'true') {
-    req.user = { oid: 'local-dev', roles: ['platform-engineer'] };
-    return userContext.run(req.user, () => next());
+function bearerToken(req: Request): string | undefined {
+  const [scheme, token] = (req.headers['authorization'] || '').split(' ');
+  return scheme?.toLowerCase() === 'bearer' && token ? token : undefined;
+}
+
+export function createAuthMiddleware(config: AuthConfig): RequestHandler {
+  if (config.mode === 'disabled') {
+    return (req, _res, next) => {
+      req.user = { oid: 'local-dev', roles: ['platform-engineer'] };
+      userContext.run(req.user, () => next());
+    };
   }
 
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  let verify: (token: string) => Promise<Record<string, any>>;
+  let rolesClaim: string;
+  let roleMap: Record<string, string>;
 
-  if (!token) {
-    return res.status(401).send('Authentication token missing');
-  }
-
-  // TEST_JWT_SECRET enables integration tests to sign tokens with a symmetric key
-  // without requiring a live JWKS endpoint. Never set this in production.
-  const testSecret = process.env.TEST_JWT_SECRET;
-  if (testSecret) {
-    jwt.verify(token, testSecret, (err, user) => {
-      if (err) {
-        return res.status(403).send('Invalid or expired token');
-      }
-      req.user = user;
-      userContext.run(user, () => next());
+  if (config.mode === 'test-secret') {
+    ({ rolesClaim, roleMap } = config);
+    verify = (token) => new Promise((resolve, reject) => {
+      jwt.verify(token, config.secret, { algorithms: ['HS256'] }, (err, claims) =>
+        err ? reject(err) : resolve(claims as Record<string, any>));
     });
-    return;
+  } else {
+    const { oidc } = config;
+    ({ rolesClaim, roleMap } = oidc);
+    let clientPromise: Promise<JwksClient> | undefined;
+    const getClient = () => {
+      clientPromise ??= (oidc.jwksUri
+        ? Promise.resolve(oidc.jwksUri)
+        : discoverJwksUri(Array.isArray(oidc.issuer) ? oidc.issuer[0] : oidc.issuer)
+      ).then(jwksUri => jwksClient({ jwksUri, cache: true, rateLimit: true }));
+      // Retry discovery on the next request if it failed
+      clientPromise.catch(() => { clientPromise = undefined; });
+      return clientPromise;
+    };
+    const getKey: jwt.GetPublicKeyOrSecret = (header, callback) => {
+      getClient()
+        .then(client => client.getSigningKey(header.kid))
+        .then(key => callback(null, key.getPublicKey()), err => callback(err));
+    };
+    const issuer = oidc.issuer as string | [string, ...string[]];
+    const audience = oidc.audience as string | [string, ...string[]];
+    verify = (token) => new Promise((resolve, reject) => {
+      jwt.verify(token, getKey, { algorithms: ASYMMETRIC_ALGORITHMS, issuer, audience }, (err, claims) =>
+        err ? reject(err) : resolve(claims as Record<string, any>));
+    });
   }
 
-  jwt.verify(token, getKey, { audience: CLIENT_ID }, (err, user) => {
-    if (err) {
-      return res.status(403).send('Invalid or expired token');
+  return (req: Request, res: Response, next: NextFunction) => {
+    const token = bearerToken(req);
+    if (!token) {
+      res.status(401).send('Authentication token missing');
+      return;
     }
-    req.user = user;
-    userContext.run(user, () => next());
-  });
+    verify(token).then(
+      (claims) => {
+        req.user = toUser(claims, rolesClaim, roleMap);
+        userContext.run(req.user, () => next());
+      },
+      () => { res.status(403).send('Invalid or expired token'); }
+    );
+  };
+}
+
+let defaultMiddleware: RequestHandler | undefined;
+
+export const authenticateToken: RequestHandler = (req, res, next) => {
+  defaultMiddleware ??= createAuthMiddleware(loadAuthConfig());
+  return defaultMiddleware(req, res, next);
 };

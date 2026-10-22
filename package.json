@@ -49,11 +49,11 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "lint": "eslint . --ext .ts",
-    "test": "vitest run tests/roles.test.ts",
+    "test": "vitest run --exclude tests/auth-audit.test.ts",
     "test:auth": "vitest run tests/auth-audit.test.ts",
     "test:e2e:minikube:all": "MCP_URL=http://localhost:3006/mcp npx tsx tests/e2e-all-63-minikube.ts",
     "sbom": "cyclonedx-npm --output-format json --output-file sbom.json",
-    "release:gate": "npm run lint && npm run typecheck && npm run test && npm run build",
+    "release:gate": "npm run lint && npm run typecheck && npm run test && npm run build && npm run test:auth",
     "start": "node dist/index.js",
     "stdio": "node dist/stdio.js",
     "dev": "tsx src/index.ts",
@@ -61,7 +61,7 @@
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.4.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "jwks-rsa": "^4.0.1"

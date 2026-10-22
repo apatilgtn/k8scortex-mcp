@@ -120,7 +120,7 @@ For the evolving full catalog, see [docs/developer-guide.md](docs/developer-guid
 
 ## Managed Risk
 
-The largest functional risk in Kubernetes MCP is dead-end visibility on non-curated resources (for example StatefulSets, DaemonSets, PVCs, or CRDs). KubeNexus addresses this by combining:
+The largest functional risk in Kubernetes MCP is dead-end visibility on non-curated resources (for example StatefulSets, DaemonSets, PVCs, or CRDs). K8sCortex addresses this by combining:
 
 - **Governed writes**: high-impact operations remain explicit, role-gated, and often dry-run by default.
 - **Flexible reads**: generic read tools cover arbitrary resource kinds for diagnostics.

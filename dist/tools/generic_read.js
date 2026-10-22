@@ -1,5 +1,22 @@
 import { getK8sClientForCluster } from "../cluster-store.js";
+import { userContext } from "../context.js";
+import { isAuthorized } from "../roles.js";
 const CLUSTER_PROP = { cluster: { type: "string", description: "Target cluster name (default: 'default')" } };
+// Resources that carry secret material are never readable through the generic tools
+const BLOCKED_RESOURCES = new Set(["secrets", "externalsecrets", "sealedsecrets", "certificaterequests"]);
+// Resources with a dedicated tool must not be readable with fewer privileges than that tool requires
+const RESOURCE_TOOL_EQUIVALENTS = { configmaps: "get_configmap" };
+/** Throws when the generic read would expose data the caller could not access through the dedicated tools. */
+function assertGenericReadAllowed(resource) {
+    const plural = String(resource || "").toLowerCase();
+    if (BLOCKED_RESOURCES.has(plural)) {
+        throw new Error(`Reading '${plural}' through the generic read tools is not permitted`);
+    }
+    const equivalentTool = RESOURCE_TOOL_EQUIVALENTS[plural];
+    if (equivalentTool && !isAuthorized(userContext.getStore()?.roles ?? [], equivalentTool)) {
+        throw new Error(`Reading '${plural}' requires the same role as ${equivalentTool}`);
+    }
+}
 function normalizeApiGroup(group) {
     if (!group || group === "core")
         return "";
@@ -50,6 +67,7 @@ export async function handleGenericReadTool(name, args) {
     const namespaced = args.namespaced !== false;
     const namespace = args.namespace;
     try {
+        assertGenericReadAllowed(resource);
         if (name === "list_k8s_resources") {
             if (!apiGroup) {
                 switch (resource) {

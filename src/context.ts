@@ -1,3 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
-export const userContext = new AsyncLocalStorage<any>();
+export interface UserContext {
+  oid: string;
+  roles: string[];
+}
+
+export const userContext = new AsyncLocalStorage<UserContext>();

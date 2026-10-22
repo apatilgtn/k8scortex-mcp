@@ -2,7 +2,7 @@ import { getK8sClientForCluster, listRegisteredClusters } from "../cluster-store
 export const multiclusterTools = [
     {
         name: "list_clusters",
-        description: "Lists all registered Kubernetes clusters managed by KubeNexus.",
+        description: "Lists all registered Kubernetes clusters known to K8sCortex (kubeconfig contexts, cluster registry file, or Azure Key Vault).",
         inputSchema: {
             type: "object",
             properties: {},
