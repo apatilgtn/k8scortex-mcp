@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.1.2 - October 23, 2026
+
+### Deployment
+
+- Helm chart (`charts/k8scortex`) for running K8sCortex as a shared service: requires OIDC or Entra ID, read-only Kubernetes RBAC by default with `rbac.allowWrites` granting exactly the verbs the write tools use, cluster registry via `clusters.config`, cloud identity via ServiceAccount annotations, ClientIP session affinity above one replica, non-root with a read-only root filesystem, optional NetworkPolicy, PodDisruptionBudget and PrometheusRule
+- `kubernetes/` replaced: the old manifests were AKS-only and their RBAC covered 2 of the 27 write tools; it now holds the chart rendered with multi-cloud example values
+- Listed in the official MCP Registry as `io.github.apatilgtn/k8scortex-mcp`, as the npm package and the container image (`ghcr.io/apatilgtn/k8scortex-mcp`)
+
+### Fixes
+
+- `list_pods` reported crash-looping pods as `Running` (their phase); it now adds `reason` with what kubectl shows in STATUS, such as `CrashLoopBackOff`, `ImagePullBackOff`, `Init:…`, `Evicted` or `Terminating`
+
+### Testing
+
+- CI installs the chart on kind with an image built from the commit and checks authentication, roles, in-cluster access, Secret blocking and RBAC with writes off and on
+- README demo recorded from real tool calls (`docs/demo`)
+
+---
+
 ## v1.1.1 - October 23, 2026
 
 ### Fixes found on a real GKE cluster
@@ -12,7 +31,6 @@
 
 - Requires Node.js 22 or later; on older Node npm silently skipped the GKE provider's `google-auth-library` dependency
 - Container image `ghcr.io/apatilgtn/k8scortex-mcp` (linux/amd64 and arm64, non-root), built and smoke-tested on every release tag
-- Listed in the official MCP Registry as `io.github.apatilgtn/k8scortex-mcp`
 
 ### Testing
 

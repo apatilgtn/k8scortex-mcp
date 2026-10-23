@@ -119,6 +119,22 @@ export const workloadTools = [
   },
 ];
 
+/** The reason kubectl would print in STATUS when it differs from the phase; undefined for a healthy pod. */
+function podReason(p: any): string | undefined {
+  if (p.metadata?.deletionTimestamp) return "Terminating";
+  if (p.status?.reason) return p.status.reason;
+  for (const c of p.status?.initContainerStatuses || []) {
+    const t = c.state?.terminated;
+    const reason = c.state?.waiting?.reason || (t && t.exitCode !== 0 ? t.reason || `ExitCode:${t.exitCode}` : undefined);
+    if (reason && reason !== "PodInitializing") return `Init:${reason}`;
+  }
+  for (const c of p.status?.containerStatuses || []) {
+    const reason = c.state?.waiting?.reason || c.state?.terminated?.reason;
+    if (reason) return reason;
+  }
+  return undefined;
+}
+
 function formatPodAge(creationTimestamp?: string): string {
   if (!creationTimestamp) return "unknown";
   const ageMs = Date.now() - new Date(creationTimestamp).getTime();
@@ -148,6 +164,8 @@ export async function handleWorkloadTool(name: string, args: any) {
             name: p.metadata?.name,
             ready: ready,
             status: p.status?.phase,
+            // What kubectl shows in STATUS, e.g. CrashLoopBackOff for a pod whose phase is still Running
+            reason: podReason(p),
             restartCount: restartCount,
             nodeName: p.spec?.nodeName || 'none',
             ip: p.status?.podIP,

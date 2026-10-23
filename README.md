@@ -9,14 +9,9 @@
 
 Most Kubernetes MCP servers hand an agent your kubeconfig. K8sCortex sits in between: it decides, per person and per cluster, which of its 75 tools may run, and records every call. Clusters from different clouds live in one registry, with credentials minted on demand.
 
-```text
-You:     Why is checkout crashing on prod-gke? Roll it back if the last deploy broke it.
-Claude:  list_pods → describe_pod → get_pod_logs   (developer tools)
-         rollout_undo  [DRY RUN] would restore revision 4 (nginx:1.27) …
-You:     Do it.
-Claude:  rollout_undo dryRun=false → rolled back · rollout_status → 3/3 ready
-         (allowed because your SSO groups map to release-manager; both calls are in the audit log)
-```
+![A developer finds why checkout is crash-looping and is denied a rollback; a release manager gets a dry run, rolls back and the audit log shows every call](docs/demo/demo.gif)
+
+<sub>Real MCP tool calls against a kind cluster, no LLM in the recording. [How it was made](docs/demo/README.md).</sub>
 
 ---
 

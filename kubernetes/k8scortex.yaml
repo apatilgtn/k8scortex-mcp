@@ -9,7 +9,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 spec:
@@ -34,7 +34,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
   annotations:
@@ -49,7 +49,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 data:
@@ -110,7 +110,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 rules:
@@ -149,7 +149,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 roleRef:
@@ -167,7 +167,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 roleRef:
@@ -185,7 +185,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 spec:
@@ -206,7 +206,7 @@ metadata:
   labels:
     helm.sh/chart: k8scortex-0.1.0
     app.kubernetes.io/managed-by: Helm
-    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/version: "1.1.2"
     app.kubernetes.io/name: k8scortex
     app.kubernetes.io/instance: k8scortex
 spec:
@@ -233,7 +233,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: k8scortex
-          image: "ghcr.io/apatilgtn/k8scortex-mcp:1.1.1"
+          image: "ghcr.io/apatilgtn/k8scortex-mcp:1.1.2"
           imagePullPolicy: IfNotPresent
           ports:
             - name: http

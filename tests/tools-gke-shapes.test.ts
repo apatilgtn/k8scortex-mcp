@@ -53,6 +53,12 @@ const routes: Record<string, (q: URLSearchParams) => object> = {
     { metadata: { name: "kube-proxy-gke-node-1", namespace: "kube-system", labels: { component: "kube-proxy" } }, status: { phase: "Running", conditions: [{ type: "Ready", status: "True" }] } },
   ] : []),
   "/api/v1/namespaces/app/events": (q) => list("Event", q.get("fieldSelector") === "type=Warning" ? events.filter(e => e.type === "Warning") : events),
+  "/api/v1/namespaces/app/pods": () => list("Pod", [
+    { metadata: { name: "web-ok" }, status: { phase: "Running", containerStatuses: [{ name: "web", restartCount: 0, state: { running: {} } }] } },
+    { metadata: { name: "web-crash" }, status: { phase: "Running", containerStatuses: [{ name: "web", restartCount: 4, state: { waiting: { reason: "CrashLoopBackOff" } } }] } },
+    { metadata: { name: "web-init" }, status: { phase: "Pending", initContainerStatuses: [{ name: "migrate", state: { waiting: { reason: "ImagePullBackOff" } } }] } },
+    { metadata: { name: "web-evicted" }, status: { phase: "Failed", reason: "Evicted" } },
+  ]),
   "/apis/apps/v1/namespaces/app/deployments/web": () => ({
     metadata: { name: "web", namespace: "app", resourceVersion: "100" },
     spec: { selector: { matchLabels: { app: "web" } }, template: template("hash-2", "nginx:1.28") },
@@ -146,6 +152,17 @@ describe("GKE-shaped clusters", () => {
   it("list_warning_events sorts newest first", async () => {
     const out = await callJson("list_warning_events", { namespace: "app" });
     expect(out[0]).toMatchObject({ reason: "BackOff", message: "newest event" });
+  });
+});
+
+describe("list_pods", () => {
+  it("reports why a pod is unhealthy, like kubectl's STATUS column", async () => {
+    const pods = await callJson("list_pods", { namespace: "app" });
+    const by = Object.fromEntries(pods.map((p: any) => [p.name, p]));
+    expect(by["web-ok"].reason).toBeUndefined();
+    expect(by["web-crash"]).toMatchObject({ status: "Running", reason: "CrashLoopBackOff", restartCount: 4 });
+    expect(by["web-init"].reason).toBe("Init:ImagePullBackOff");
+    expect(by["web-evicted"].reason).toBe("Evicted");
   });
 });
 

@@ -6,12 +6,12 @@
     "url": "https://github.com/apatilgtn/k8scortex-mcp",
     "source": "github"
   },
-  "version": "1.1.1",
+  "version": "1.1.2",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "k8scortex-mcp",
-      "version": "1.1.1",
+      "version": "1.1.2",
       "transport": {
         "type": "stdio"
       },
@@ -41,7 +41,7 @@
     },
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/apatilgtn/k8scortex-mcp:1.1.1",
+      "identifier": "ghcr.io/apatilgtn/k8scortex-mcp:1.1.2",
       "runtimeHint": "docker",
       "runtimeArguments": [
         {
