@@ -13,6 +13,14 @@ Most Kubernetes MCP servers hand an agent your kubeconfig. K8sCortex sits in bet
 
 <sub>Real MCP tool calls against a kind cluster, no LLM in the recording. [How it was made](docs/demo/README.md).</sub>
 
+<details>
+<summary><b>Watch the 70-second walkthrough:</b> a prod incident, release drift, a flash sale, a password rotation and node maintenance across staging and prod</summary>
+
+![Five scenarios across staging and prod: a crash-looping checkout is rolled back by an SRE after a developer and a release manager are denied; drift between staging and prod is detected; checkout is scaled for a flash sale after a dry run; a database password is rotated without being echoed or logged; draining a prod node is blocked by policy. The audit trail lists every call](docs/demo/walkthrough.gif)
+
+Prod's policies in this recording: any change needs `sre`, and `drain_node` is disabled. [Scenario details](docs/demo/README.md#the-walkthrough).
+</details>
+
 ---
 
 ## Features
