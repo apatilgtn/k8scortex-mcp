@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.1.1 - October 23, 2026
+
+### Fixes found on a real GKE cluster
+
+- `get_addon_health` reported metrics-server missing, kube-proxy degraded and the CNI missing on GKE Standard; it now matches versioned addon names (`metrics-server-v1.36.0`), kube-proxy static pods (or a Cilium dataplane) and GKE's `netd` / `anetd`
+- `list_events` and `list_warning_events` kept the first 50 events in name order and dropped the newest; they now return the 50 most recent, newest first
+- `rollout_undo` failed with 409 Conflict when the Deployment changed mid-call (for example an HPA scaling it); it now patches only `spec.template`, like `kubectl rollout undo`, and drops the old ReplicaSet's `pod-template-hash` label
+
+### Packaging
+
+- Requires Node.js 22 or later; on older Node npm silently skipped the GKE provider's `google-auth-library` dependency
+
+### Testing
+
+- New `npm run test:e2e:gke`: the native `gke` and `kubeconfig` providers, all 75 tools and per-cluster policies against a real GKE cluster (100/100 on GKE 1.36)
+- Unit tests replaying API responses captured from GKE; the auth/audit suite no longer depends on the local kubeconfig
+
+---
+
 ## v1.1.0 - October 22, 2026
 
 ### Multi-cloud
