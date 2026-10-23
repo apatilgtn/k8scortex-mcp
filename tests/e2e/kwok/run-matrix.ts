@@ -263,6 +263,8 @@ async function toolsSuite() {
   await toolCase(c, S, "set_resource_limits", { namespace: NS, deploymentName: "fixture-deploy", containerName: "fixture-deploy", cpuRequest: "150m", cpuLimit: "300m", memoryRequest: "96Mi", memoryLimit: "192Mi", dryRun: false, ...cl }, [], {
     verify: () => assert(jsonpath(DEV, "deployment fixture-deploy", "{.spec.template.spec.containers[0].resources.limits.cpu}") === "300m", "cpu limit is not 300m"),
   });
+  // rollout_undo and set_resource_limits each start a rollout; a pod picked mid-rollout can vanish before restart_pod
+  kubectl(DEV, ["-n", NS, "rollout", "status", "deployment/fixture-deploy", "--timeout=60s"]);
   const victim = pod();
   await toolCase(c, S, "restart_pod", { namespace: NS, podName: victim, dryRun: false, ...cl }, [], {
     verify: () => eventually(() => !exists(DEV, `pod ${victim}`) || jsonpath(DEV, `pod ${victim}`, "{.metadata.deletionTimestamp}") !== "", `pod ${victim} was not deleted`),
