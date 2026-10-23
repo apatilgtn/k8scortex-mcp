@@ -22,6 +22,9 @@ $K apply -f "$CRDS/argocd-app-crd.yaml" --server-side >/dev/null
 $K get crd verticalpodautoscalers.autoscaling.k8s.io >/dev/null 2>&1 || $K apply -f "$CRDS/vpa-crd.yaml" --server-side >/dev/null
 $K wait --for=condition=Established crd --all --timeout=60s >/dev/null
 
+# GKE expires events after an hour, so recreate the fixture event rather than leave a nearly expired one
+$K -n $NS delete event fixture-warning --ignore-not-found >/dev/null 2>&1 || true
+
 # Requests are kept small so everything fits on one e2-standard-2 node
 cat <<EOF | $K apply -f - >/dev/null
 apiVersion: v1

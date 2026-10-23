@@ -356,7 +356,8 @@ async function toolsSuite() {
   });
   await toolCase(c, S, "scale_deployment", { namespace: NS, deploymentName: "fixture-deploy", replicas: 3, dryRun: false, ...cl }, [], {
     label: "real",
-    verify: () => eventually(() => jsonpath("deployment fixture-deploy", "{.status.readyReplicas}") === "3", "3 replicas never became ready"),
+    // Checked straight away: the fixture HPA (min 2) may scale it back down within its 15s sync period
+    verify: () => assert(jsonpath("deployment fixture-deploy", "{.spec.replicas}") === "3", "spec.replicas is not 3"),
   });
   await toolCase(c, S, "rollout_undo", { namespace: NS, deploymentName: "fixture-deploy", dryRun: false, ...cl }, [], {
     verify: () => eventually(() => jsonpath("deployment fixture-deploy", "{.spec.template.spec.containers[0].image}") === "nginx:1.27-alpine", "image was not rolled back to nginx:1.27-alpine"),
@@ -477,6 +478,7 @@ async function toolsSuite() {
 
 async function policiesSuite() {
   const S = "policies";
+  const runId = Date.now() % 100000;
 
   const dev = await stdioClient({ K8SCORTEX_STDIO_ROLES: "developer" });
   await toolCase(dev, S, "list_pods", { namespace: NS, cluster: ADC }, [/fixture-deploy-/], { label: "developer can read" });
@@ -489,19 +491,24 @@ async function policiesSuite() {
   const policed = await stdioClient({
     K8SCORTEX_STDIO_ROLES: "sre",
     CLUSTERS_CONFIG: writeRegistry({ policies: [
-      { labels: { auth: "adc" }, denyTools: ["drain_node", "delete_namespace"] },
+      // restart_pod is otherwise allowed for sre, so a denial can only come from the policy
+      { labels: { auth: "adc" }, denyTools: ["restart_pod"] },
       { match: "gke-kube*", minRole: "platform-engineer", appliesTo: "mutating" },
     ] }),
   });
-  await toolCase(policed, S, "drain_node", { nodeName: nodesInPool(DRAIN_POOL)[0], cluster: ADC }, [/disabled on cluster 'gke-adc' by policy/], { label: "denyTools by label", expectError: true });
-  await toolCase(policed, S, "list_pods", { namespace: NS, cluster: KCFG }, [/fixture-deploy-/], { label: "minRole on mutating leaves reads alone" });
-  await toolCase(policed, S, "create_configmap", { namespace: NS, configMapName: "policy-blocked", data: { A: "1" }, dryRun: false, cluster: KCFG }, [/requires role platform-engineer/], {
-    label: "minRole by name glob", expectError: true,
-    verify: () => assert(!exists("configmap policy-blocked"), "configmap was created despite the policy"),
+  const target = jsonpath("pods -l app=fixture-deploy", "{.items[0].metadata.name}");
+  await toolCase(policed, S, "restart_pod", { namespace: NS, podName: target, dryRun: false, cluster: ADC }, [/disabled on cluster 'gke-adc' by policy/], {
+    label: "denyTools by label", expectError: true,
+    verify: () => assert(!deleting(`pod ${target}`), "the pod was deleted despite the policy"),
   });
-  await toolCase(policed, S, "create_configmap", { namespace: NS, configMapName: "policy-allowed", data: { A: "1" }, dryRun: false, cluster: ADC }, [], {
+  await toolCase(policed, S, "list_pods", { namespace: NS, cluster: KCFG }, [/fixture-deploy-/], { label: "minRole on mutating leaves reads alone" });
+  await toolCase(policed, S, "create_configmap", { namespace: NS, configMapName: `policy-blocked-${runId}`, data: { A: "1" }, dryRun: false, cluster: KCFG }, [/requires role platform-engineer/], {
+    label: "minRole by name glob", expectError: true,
+    verify: () => assert(!exists(`configmap policy-blocked-${runId}`), "configmap was created despite the policy"),
+  });
+  await toolCase(policed, S, "create_configmap", { namespace: NS, configMapName: `policy-allowed-${runId}`, data: { A: "1" }, dryRun: false, cluster: ADC }, [], {
     label: "other cluster unaffected",
-    verify: () => assert(exists("configmap policy-allowed"), "configmap not created"),
+    verify: () => assert(exists(`configmap policy-allowed-${runId}`), "configmap not created"),
   });
   await toolCase(policed, S, "list_pods", { namespace: NS }, [/fixture-deploy-/], { label: "reads fall back to defaultCluster" });
   await toolCase(policed, S, "create_configmap", { namespace: NS, configMapName: "no-cluster", data: { A: "1" }, dryRun: false }, [/cluster/i], { label: "writes need an explicit cluster", expectError: true });
