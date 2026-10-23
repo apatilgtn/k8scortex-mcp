@@ -34,3 +34,4 @@ sbom.json
 
 # E2E results
 e2e-results.json
+e2e-gke-results.json
