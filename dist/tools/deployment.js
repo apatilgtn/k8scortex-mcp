@@ -2,6 +2,7 @@ import { PatchStrategy, setHeaderOptions } from "@kubernetes/client-node";
 import { getK8sClientForCluster } from "../cluster-store.js";
 // Patch bodies below are partial objects, so they must be sent as merge patches (the client defaults to JSON Patch)
 const MERGE_PATCH = setHeaderOptions("Content-Type", PatchStrategy.MergePatch);
+const JSON_PATCH = setHeaderOptions("Content-Type", PatchStrategy.JsonPatch);
 const CLUSTER_PROP = { cluster: { type: "string", description: "Target cluster name (default: 'default')" } };
 export const deploymentTools = [
     {
@@ -134,10 +135,15 @@ export async function handleDeploymentTool(name, args) {
                 if (!previous.spec?.template) {
                     throw new Error(`Previous ReplicaSet template is missing for deployment ${deploymentName}.`);
                 }
-                const body = dep;
-                body.spec = body.spec || {};
-                body.spec.template = previous.spec.template;
-                await appsV1Api.replaceNamespacedDeployment({ name: deploymentName, namespace, body });
+                // Like kubectl rollout undo: drop the ReplicaSet's own hash label and replace only the template.
+                // A patch also avoids the 409 a full replace hits when the controller or an HPA updates the Deployment meanwhile.
+                const template = structuredClone(previous.spec.template);
+                delete template.metadata?.labels?.["pod-template-hash"];
+                await appsV1Api.patchNamespacedDeployment({
+                    name: deploymentName,
+                    namespace,
+                    body: [{ op: "replace", path: "/spec/template", value: template }],
+                }, JSON_PATCH);
                 return { content: [{ type: "text", text: `Successfully rolled back deployment ${deploymentName} to revision ${parsed[1].revision} on cluster '${cluster}'.` }] };
             }
             case "restart_pod": {
