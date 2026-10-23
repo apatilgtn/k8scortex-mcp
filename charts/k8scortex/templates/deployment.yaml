@@ -1,0 +1,115 @@
+{{- include "k8scortex.validate" . -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k8scortex.fullname" . }}
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "k8scortex.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "k8scortex.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        {{- if and .Values.clusters.config (not .Values.clusters.existingConfigMap) }}
+        checksum/clusters: {{ toJson .Values.clusters.config | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "k8scortex.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: k8scortex
+          image: "{{ .Values.image.repository }}:{{ default .Chart.AppVersion .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - { name: PORT, value: "3000" }
+            - { name: AUDIT_LOG_FILE, value: {{ .Values.audit.logFile | quote }} }
+            - { name: SESSION_IDLE_TTL_MS, value: {{ .Values.sessionIdleTtlMs | quote }} }
+            {{- if .Values.auth.disabled }}
+            - { name: DISABLE_AUTH, value: "true" }
+            {{- end }}
+            {{- with .Values.auth.oidc }}
+            {{- if .issuer }}
+            - { name: OIDC_ISSUER, value: {{ .issuer | quote }} }
+            - { name: OIDC_AUDIENCE, value: {{ .audience | quote }} }
+            {{- end }}
+            {{- if .jwksUri }}
+            - { name: OIDC_JWKS_URI, value: {{ .jwksUri | quote }} }
+            {{- end }}
+            - { name: OIDC_ROLES_CLAIM, value: {{ .rolesClaim | quote }} }
+            {{- if .roleMap }}
+            - { name: OIDC_ROLE_MAP, value: {{ toJson .roleMap | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- if .Values.auth.entra.tenantId }}
+            - { name: ENTRA_TENANT_ID, value: {{ .Values.auth.entra.tenantId | quote }} }
+            - { name: ENTRA_CLIENT_ID, value: {{ .Values.auth.entra.clientId | quote }} }
+            {{- end }}
+            {{- if include "k8scortex.hasClusters" . }}
+            - { name: CLUSTERS_CONFIG, value: /etc/k8scortex/clusters.json }
+            {{- end }}
+            {{- if .Values.clusters.defaultCluster }}
+            - { name: DEFAULT_CLUSTER, value: {{ .Values.clusters.defaultCluster | quote }} }
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.envFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - { name: audit, mountPath: {{ dir .Values.audit.logFile | quote }} }
+            - { name: tmp, mountPath: /tmp }
+            {{- if include "k8scortex.hasClusters" . }}
+            - { name: clusters, mountPath: /etc/k8scortex, readOnly: true }
+            {{- end }}
+      volumes:
+        - { name: audit, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+        {{- if include "k8scortex.hasClusters" . }}
+        - name: clusters
+          configMap:
+            name: {{ include "k8scortex.clustersConfigMap" . }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

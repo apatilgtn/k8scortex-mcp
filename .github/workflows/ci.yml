@@ -76,12 +76,50 @@ jobs:
           path: e2e-results.json
           if-no-files-found: warn
 
+  # ── Helm chart on kind: install, roles, in-cluster access, RBAC both ways ──
+  helm-kind:
+    name: Helm chart on kind
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Lint chart and check rendered example is current
+        run: |
+          helm lint charts/k8scortex --set auth.disabled=true
+          { head -2 kubernetes/k8scortex.yaml; helm template k8scortex charts/k8scortex -n platform-mcp -f kubernetes/example-values.yaml; } | diff - kubernetes/k8scortex.yaml
+
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: k8scortex
+
+      - name: Build image and load it into kind
+        run: |
+          docker build -t k8scortex-mcp:ci .
+          kind load docker-image k8scortex-mcp:ci --name k8scortex
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install chart and run smoke tests
+        run: tests/e2e/helm/run.sh k8scortex-mcp ci
+
   # ── SBOM generation (C-11) ──────────────────────────────────────────────────
   sbom:
     name: Generate SBOM (C-11)
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [release-gate, e2e-kwok]
+    needs: [release-gate, e2e-kwok, helm-kind]
 
     steps:
       - uses: actions/checkout@v4

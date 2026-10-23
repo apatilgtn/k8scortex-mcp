@@ -1,0 +1,279 @@
+# Rendered from charts/k8scortex for teams that apply plain manifests. Regenerate after changing the chart:
+#   helm template k8scortex charts/k8scortex -n platform-mcp -f kubernetes/example-values.yaml > kubernetes/k8scortex.yaml
+---
+# Source: k8scortex/templates/extras.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: k8scortex
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: k8scortex
+      app.kubernetes.io/instance: k8scortex
+  policyTypes: [Ingress]
+  ingress:
+    - ports:
+        - { protocol: TCP, port: 3000 }
+      from:
+        - namespaceSelector:
+            matchLabels:
+              k8scortex-client: "true"
+---
+# Source: k8scortex/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8scortex
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/k8scortex
+    iam.gke.io/gcp-service-account: k8scortex@acme-prod.iam.gserviceaccount.com
+---
+# Source: k8scortex/templates/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8scortex-clusters
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+data:
+  clusters.json: |
+    {
+      "clusters": [
+        {
+          "context": "inClusterContext",
+          "labels": {
+            "env": "mgmt"
+          },
+          "name": "mgmt",
+          "provider": "kubeconfig"
+        },
+        {
+          "gkeClusterName": "prod",
+          "labels": {
+            "env": "prod"
+          },
+          "location": "us-central1",
+          "name": "prod-gke",
+          "project": "acme-prod",
+          "provider": "gke"
+        },
+        {
+          "eksClusterName": "prod",
+          "labels": {
+            "env": "prod"
+          },
+          "name": "prod-eks",
+          "provider": "eks",
+          "region": "us-east-1"
+        }
+      ],
+      "policies": [
+        {
+          "appliesTo": "mutating",
+          "labels": {
+            "env": "prod"
+          },
+          "minRole": "sre"
+        },
+        {
+          "denyTools": [
+            "drain_node",
+            "delete_namespace"
+          ],
+          "match": "prod-*"
+        }
+      ]
+    }
+---
+# Source: k8scortex/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8scortex-read
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+rules:
+  - apiGroups: [""]
+    resources: [nodes, persistentvolumes]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings, clusterroles, clusterrolebindings]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+  - apiGroups: [autoscaling.k8s.io]
+    resources: [verticalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [get, list, watch]
+  - apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io, source.toolkit.fluxcd.io, notification.toolkit.fluxcd.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # get_effective_permissions
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+---
+# Source: k8scortex/templates/rbac.yaml
+# Read-only tools: the built-in view role (no Secrets) plus what it does not cover
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8scortex-view
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - { kind: ServiceAccount, name: k8scortex, namespace: platform-mcp }
+---
+# Source: k8scortex/templates/rbac.yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8scortex-read
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: k8scortex-read
+subjects:
+  - { kind: ServiceAccount, name: k8scortex, namespace: platform-mcp }
+---
+# Source: k8scortex/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: k8scortex
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+# Source: k8scortex/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8scortex
+  labels:
+    helm.sh/chart: k8scortex-0.1.0
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/version: "1.1.1"
+    app.kubernetes.io/name: k8scortex
+    app.kubernetes.io/instance: k8scortex
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: k8scortex
+      app.kubernetes.io/instance: k8scortex
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: k8scortex
+        app.kubernetes.io/instance: k8scortex
+      annotations:
+        checksum/clusters: a92ff97a45133f97ac18286d99a5d9f8c64f5b09f000c3c083989ed3832909db
+    spec:
+      serviceAccountName: k8scortex
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: k8scortex
+          image: "ghcr.io/apatilgtn/k8scortex-mcp:1.1.1"
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - { name: PORT, value: "3000" }
+            - { name: AUDIT_LOG_FILE, value: "/var/log/k8scortex/audit.log" }
+            - { name: SESSION_IDLE_TTL_MS, value: "1.8e+06" }
+            - { name: OIDC_ISSUER, value: "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0" }
+            - { name: OIDC_AUDIENCE, value: "api://k8scortex" }
+            - { name: OIDC_ROLES_CLAIM, value: "groups" }
+            - { name: OIDC_ROLE_MAP, value: "{\"k8s-developers\":\"developer\",\"k8s-platform\":\"platform-engineer\",\"k8s-release\":\"release-manager\",\"k8s-sre\":\"sre\"}" }
+            - { name: CLUSTERS_CONFIG, value: /etc/k8scortex/clusters.json }
+            - { name: DEFAULT_CLUSTER, value: "mgmt" }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - { name: audit, mountPath: "/var/log/k8scortex" }
+            - { name: tmp, mountPath: /tmp }
+            - { name: clusters, mountPath: /etc/k8scortex, readOnly: true }
+      volumes:
+        - { name: audit, emptyDir: {} }
+        - { name: tmp, emptyDir: {} }
+        - name: clusters
+          configMap:
+            name: k8scortex-clusters

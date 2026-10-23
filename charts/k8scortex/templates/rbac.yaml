@@ -1,0 +1,145 @@
+{{- if .Values.rbac.create }}
+{{- $name := include "k8scortex.fullname" . }}
+{{- $sa := include "k8scortex.serviceAccountName" . }}
+# Read-only tools: the built-in view role (no Secrets) plus what it does not cover
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-view
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: view
+subjects:
+  - { kind: ServiceAccount, name: {{ $sa }}, namespace: {{ .Release.Namespace }} }
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}-read
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [nodes, persistentvolumes]
+    verbs: [get, list, watch]
+  - apiGroups: [storage.k8s.io]
+    resources: [storageclasses]
+    verbs: [get, list, watch]
+  - apiGroups: [rbac.authorization.k8s.io]
+    resources: [roles, rolebindings, clusterroles, clusterrolebindings]
+    verbs: [get, list, watch]
+  - apiGroups: [metrics.k8s.io]
+    resources: [pods, nodes]
+    verbs: [get, list]
+  - apiGroups: [autoscaling.k8s.io]
+    resources: [verticalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [get, list, watch]
+  - apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io, source.toolkit.fluxcd.io, notification.toolkit.fluxcd.io]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  # get_effective_permissions
+  - apiGroups: [authorization.k8s.io]
+    resources: [subjectaccessreviews]
+    verbs: [create]
+  {{- if .Values.rbac.readAllResources }}
+  # Generic reads of any kind (includes Secrets at the Kubernetes level; K8sCortex refuses to return them)
+  - apiGroups: ["*"]
+    resources: ["*"]
+    verbs: [get, list, watch]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-read
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}-read
+subjects:
+  - { kind: ServiceAccount, name: {{ $sa }}, namespace: {{ .Release.Namespace }} }
+{{- if .Values.rbac.allowWrites }}
+---
+# Exactly the verbs K8sCortex's curated write tools use
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ $name }}-write
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+rules:
+  # create/delete_deployment, scale_deployment, rollout_undo, set_resource_limits
+  - apiGroups: [apps]
+    resources: [deployments]
+    verbs: [create, delete, patch]
+  # restart_pod, drain_node
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [delete]
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  # cordon/uncordon/taint/remove_taint, drain_node
+  - apiGroups: [""]
+    resources: [nodes]
+    verbs: [patch]
+  # create/delete_namespace
+  - apiGroups: [""]
+    resources: [namespaces]
+    verbs: [create, delete]
+  # create/update_configmap, create_service
+  - apiGroups: [""]
+    resources: [configmaps, services]
+    verbs: [create, patch]
+  # create/update_secret (update merges into the current value, so it reads it)
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [create, get, patch]
+  # create_horizontal_pod_autoscaler
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [create]
+  # create_job, suspend/resume_cronjob
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [create]
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    verbs: [patch]
+  # update_ingress, create_network_policy
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [update]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies]
+    verbs: [create]
+  # sync_gitops_app, suspend/resume_flux_resource
+  - apiGroups: [argoproj.io]
+    resources: [applications]
+    verbs: [update]
+  - apiGroups: [kustomize.toolkit.fluxcd.io, helm.toolkit.fluxcd.io, source.toolkit.fluxcd.io]
+    resources: ["*"]
+    verbs: [update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ $name }}-write
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ $name }}-write
+subjects:
+  - { kind: ServiceAccount, name: {{ $sa }}, namespace: {{ .Release.Namespace }} }
+{{- end }}
+{{- end }}

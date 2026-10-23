@@ -1,0 +1,24 @@
+K8sCortex {{ .Chart.AppVersion }} is running in {{ .Release.Namespace }}.
+
+MCP endpoint (in-cluster):
+  http://{{ include "k8scortex.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/mcp
+
+Try it from your machine:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "k8scortex.fullname" . }} 3000:{{ .Values.service.port }}
+  npx @modelcontextprotocol/inspector   # Streamable HTTP, http://localhost:3000/mcp, Bearer <OIDC token>
+{{- if .Values.auth.disabled }}
+
+WARNING: auth.disabled=true. Every caller is an unauthenticated platform-engineer. Use only for local experiments.
+{{- end }}
+{{- if not .Values.rbac.allowWrites }}
+
+Kubernetes RBAC is read-only (rbac.allowWrites=false): write tools will return 403 on this cluster.
+{{- end }}
+{{- if not (include "k8scortex.hasClusters" .) }}
+
+No cluster registry is configured, so K8sCortex manages only this cluster, named "inClusterContext",
+as service account {{ include "k8scortex.serviceAccountName" . }}. Set clusters.config to add GKE, EKS or AKS clusters
+(register this one too with { "name": "<name>", "provider": "kubeconfig", "context": "inClusterContext" }).
+{{- end }}
+
+Audit records are written to the pod's stdout; ship them with your log pipeline.

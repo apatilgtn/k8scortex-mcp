@@ -38,6 +38,48 @@
           "format": "string"
         }
       ]
+    },
+    {
+      "registryType": "oci",
+      "identifier": "ghcr.io/apatilgtn/k8scortex-mcp:1.1.1",
+      "runtimeHint": "docker",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--volume",
+          "value": "{kube_dir}:/home/node/.kube:ro",
+          "description": "Mount your kubeconfig directory read-only. Contexts that use exec plugins (gke-gcloud-auth-plugin, aws eks get-token) need the gke/eks providers via CLUSTERS_CONFIG instead.",
+          "variables": {
+            "kube_dir": {
+              "description": "Directory containing your kubeconfig, e.g. /home/you/.kube",
+              "isRequired": true,
+              "format": "filepath"
+            }
+          }
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "node"
+        },
+        {
+          "type": "positional",
+          "value": "dist/stdio.js"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "K8SCORTEX_STDIO_ROLES",
+          "description": "Roles for the session, e.g. developer for read-only tools. Defaults to platform-engineer.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
     }
   ]
 }

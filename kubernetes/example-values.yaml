@@ -1,0 +1,32 @@
+# Example: Entra ID sign-in, read-only on the local cluster, plus a GKE and an EKS cluster.
+auth:
+  oidc:
+    issuer: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0
+    audience: api://k8scortex
+    rolesClaim: groups
+    roleMap:
+      k8s-developers: developer
+      k8s-release: release-manager
+      k8s-sre: sre
+      k8s-platform: platform-engineer
+
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: k8scortex@acme-prod.iam.gserviceaccount.com
+    eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/k8scortex
+
+clusters:
+  defaultCluster: mgmt
+  config:
+    clusters:
+      - { name: mgmt, provider: kubeconfig, context: inClusterContext, labels: { env: mgmt } }
+      - { name: prod-gke, provider: gke, project: acme-prod, location: us-central1, gkeClusterName: prod, labels: { env: prod } }
+      - { name: prod-eks, provider: eks, region: us-east-1, eksClusterName: prod, labels: { env: prod } }
+    policies:
+      - { labels: { env: prod }, minRole: sre, appliesTo: mutating }
+      - { match: "prod-*", denyTools: [drain_node, delete_namespace] }
+
+networkPolicy:
+  enabled: true
+  ingressFrom:
+    - namespaceSelector: { matchLabels: { k8scortex-client: "true" } }

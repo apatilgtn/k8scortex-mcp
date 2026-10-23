@@ -1,0 +1,11 @@
+{{- if and .Values.clusters.config (not .Values.clusters.existingConfigMap) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "k8scortex.clustersConfigMap" . }}
+  labels:
+    {{- include "k8scortex.labels" . | nindent 4 }}
+data:
+  clusters.json: |
+    {{- toPrettyJson .Values.clusters.config | nindent 4 }}
+{{- end }}

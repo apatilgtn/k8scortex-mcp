@@ -54,6 +54,15 @@ Requires Node.js 22+ and a working kubeconfig. Add to your client's MCP configur
 
 ### As a shared service for a team (HTTP + OIDC)
 
+With the [Helm chart](charts/k8scortex) (read-only RBAC by default; see the chart README for writes and more clouds):
+
+```bash
+helm install k8scortex ./charts/k8scortex -n platform-mcp --create-namespace \
+  --set auth.oidc.issuer=https://login.example.com --set auth.oidc.audience=k8scortex
+```
+
+Plain manifests rendered from the chart are in [`kubernetes/`](kubernetes/). Or run the image directly:
+
 ```bash
 docker run -p 3000:3000 \
   -e OIDC_ISSUER=https://login.example.com -e OIDC_AUDIENCE=k8scortex \
@@ -295,7 +304,8 @@ tests/
     ├── kwok/             # 164-scenario matrix on two simulated clusters (runs in CI)
     └── gke/              # Every tool, both GKE providers and policies on a real GKE cluster
 
-kubernetes/               # Example manifests (being updated for multi-cloud)
+charts/k8scortex/         # Helm chart for the shared HTTP service (tested on kind in CI)
+kubernetes/               # The chart rendered to plain manifests, with example values
 Dockerfile                # Image published to ghcr.io/apatilgtn/k8scortex-mcp
 
 docs/

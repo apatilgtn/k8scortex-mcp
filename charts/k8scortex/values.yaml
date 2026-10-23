@@ -1,0 +1,119 @@
+# K8sCortex MCP server — shared HTTP deployment for a team.
+# Clients connect to http://<release>.<namespace>.svc/mcp with an OIDC bearer token.
+
+image:
+  repository: ghcr.io/apatilgtn/k8scortex-mcp
+  # Defaults to the chart's appVersion
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# MCP sessions live in memory. With more than one replica the Service uses
+# ClientIP session affinity so a client keeps talking to the pod that holds its session.
+replicaCount: 1
+
+auth:
+  # Only for local experiments: every caller becomes an unauthenticated platform-engineer.
+  disabled: false
+  oidc:
+    # Comma-separated issuer URL(s); JWKS is discovered from /.well-known/openid-configuration
+    issuer: ""
+    # Comma-separated expected audience(s)
+    audience: ""
+    jwksUri: ""
+    # Claim holding roles or groups, e.g. roles, groups, cognito:groups, realm_access.roles
+    rolesClaim: roles
+    # Map IdP group names to K8sCortex roles, e.g. { "k8s-devs": "developer", "k8s-sre": "sre" }
+    roleMap: {}
+  # Shorthand for Microsoft Entra ID (sets issuer, audience and JWKS)
+  entra:
+    tenantId: ""
+    clientId: ""
+
+# Cluster registry (CLUSTERS_CONFIG). Leave empty to manage only the cluster this chart runs in.
+clusters:
+  # Inline registry, rendered to a ConfigMap. Same format as the README's clusters.json.
+  config: {}
+  # Or the name of an existing ConfigMap with a clusters.json key
+  existingConfigMap: ""
+  # Cluster used when a tool call names none
+  defaultCluster: ""
+
+serviceAccount:
+  create: true
+  name: ""
+  # Cloud identity for the gke / eks / azure-keyvault providers, for example:
+  #   GKE Workload Identity:   iam.gke.io/gcp-service-account: k8scortex@PROJECT.iam.gserviceaccount.com
+  #   EKS IRSA:                eks.amazonaws.com/role-arn: arn:aws:iam::111122223333:role/k8scortex
+  #   Azure Workload Identity: azure.workload.identity/client-id: <client-id>  (plus podLabels below)
+  annotations: {}
+
+# RBAC for the cluster this chart is installed in. Remote clusters get their own RBAC
+# for the cloud identity above. The role table in K8sCortex decides who may use what;
+# this decides the most anyone can do.
+rbac:
+  create: true
+  # Grant the write verbs used by K8sCortex's curated write tools (scale, rollback,
+  # create/delete deployments, jobs, configmaps, secrets, node drain, GitOps sync, ...).
+  # Off by default: write tools then fail with 403 from Kubernetes.
+  allowWrites: false
+  # Add get/list/watch on every resource, CRDs included, for list_k8s_resources /
+  # get_k8s_resource on kinds the built-in view role does not cover. This includes Secrets
+  # at the Kubernetes level, although K8sCortex itself refuses to return them.
+  readAllResources: false
+
+audit:
+  # Audit records always go to stdout in HTTP mode; this file is a local copy on an emptyDir
+  logFile: /var/log/k8scortex/audit.log
+
+# Idle Streamable HTTP sessions are closed after this long
+sessionIdleTtlMs: 1800000
+
+service:
+  type: ClusterIP
+  port: 80
+
+networkPolicy:
+  enabled: false
+  # Who may reach the MCP port, e.g. [{ namespaceSelector: { matchLabels: { team: agents } } }]
+  ingressFrom: []
+
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+
+prometheusRule:
+  enabled: false
+  labels: {}
+
+extraEnv: []
+envFrom: []
+
+podAnnotations: {}
+podLabels: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 192Mi
+  limits:
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
