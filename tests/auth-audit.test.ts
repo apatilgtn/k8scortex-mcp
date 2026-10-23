@@ -16,7 +16,8 @@
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { spawn, ChildProcess } from 'child_process';
-import { readFileSync, existsSync, unlinkSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync } from 'fs';
+import { tmpdir } from 'os';
 import { join } from 'path';
 import jwt from 'jsonwebtoken';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -30,6 +31,27 @@ const TEST_PORT   = 3099;
 const BASE_URL    = `http://localhost:${TEST_PORT}`;
 const MCP_URL     = `${BASE_URL}/mcp`;
 const AUDIT_FILE  = join(process.cwd(), `audit-test-${TEST_PORT}.log`);
+const KUBECONFIG  = join(tmpdir(), `k8scortex-auth-test-${TEST_PORT}.kubeconfig`);
+
+// Nothing listens on port 1, so tool calls fail fast instead of depending on
+// (or hanging on) whatever cluster the developer's own kubeconfig points at.
+const UNREACHABLE_KUBECONFIG = `apiVersion: v1
+kind: Config
+clusters:
+- name: unreachable
+  cluster:
+    server: https://127.0.0.1:1
+contexts:
+- name: unreachable
+  context:
+    cluster: unreachable
+    user: test
+current-context: unreachable
+users:
+- name: test
+  user:
+    token: test
+`;
 
 // ── JWT helpers ───────────────────────────────────────────────────────────────
 
@@ -60,6 +82,7 @@ async function waitForServer(timeoutMs = 12_000): Promise<void> {
 
 beforeAll(async () => {
   if (existsSync(AUDIT_FILE)) unlinkSync(AUDIT_FILE);
+  writeFileSync(KUBECONFIG, UNREACHABLE_KUBECONFIG);
 
   serverProcess = spawn('node', ['dist/index.js'], {
     env: {
@@ -68,8 +91,11 @@ beforeAll(async () => {
       DISABLE_AUTH:       'false',
       TEST_JWT_SECRET:    TEST_SECRET,
       AUDIT_LOG_FILE:     AUDIT_FILE,
-      // Use local kubeconfig so tool handlers can reach the cluster without Key Vault
+      // Use a local kubeconfig (not Key Vault or CLUSTERS_CONFIG) that is never reachable
       USE_LOCAL_KUBECONFIG: 'true',
+      KUBECONFIG,
+      CLUSTERS_CONFIG:      '',
+      AZURE_KEYVAULT_URI:   '',
     },
     stdio: 'pipe',
   });
@@ -82,6 +108,7 @@ beforeAll(async () => {
 afterAll(() => {
   serverProcess?.kill('SIGTERM');
   if (existsSync(AUDIT_FILE)) unlinkSync(AUDIT_FILE);
+  if (existsSync(KUBECONFIG)) unlinkSync(KUBECONFIG);
 });
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

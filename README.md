@@ -36,8 +36,8 @@ npm install -g k8scortex-mcp
 
 ### Prerequisites
 
-- Node.js ≥ 18
-- A Kubernetes cluster (minikube, Rancher Desktop, or AKS)
+- Node.js ≥ 22 (the GKE provider's `google-auth-library` and the `jose` dependency of `jwks-rsa` need it)
+- A Kubernetes cluster (minikube, kind, GKE, EKS, AKS or OpenShift)
 - `kubectl` configured with a valid context
 
 ### Install & Run

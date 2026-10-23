@@ -15,7 +15,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
   "keywords": [
     "mcp",
@@ -52,6 +52,7 @@
     "test": "vitest run --exclude tests/auth-audit.test.ts",
     "test:auth": "vitest run tests/auth-audit.test.ts",
     "test:e2e:kwok": "tests/e2e/kwok/create-clusters.sh && npm run build && tsx tests/e2e/kwok/run-matrix.ts",
+    "test:e2e:gke": "tests/e2e/gke/setup.sh \"$GKE_CONTEXT\" && npm run build && tsx tests/e2e/gke/run-gke.ts",
     "test:e2e:minikube:all": "MCP_URL=http://localhost:3006/mcp npx tsx tests/e2e-all-63-minikube.ts",
     "sbom": "cyclonedx-npm --output-format json --output-file sbom.json",
     "release:gate": "npm run lint && npm run typecheck && npm run test && npm run build && npm run test:auth",
