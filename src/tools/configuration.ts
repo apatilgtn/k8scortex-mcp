@@ -93,13 +93,15 @@ export async function handleConfigurationTool(name: string, args: any) {
       case "list_events": {
         const { namespace } = args;
         const res = await coreV1Api.listNamespacedEvent({ namespace });
-        const events = res.items.map((e: any) => ({
+        // The API returns events in name order, so sort before keeping the 50 most recent
+        const eventTime = (e: any) => new Date(e.lastTimestamp || e.eventTime || e.metadata?.creationTimestamp || 0).getTime();
+        const events = res.items.sort((a: any, b: any) => eventTime(b) - eventTime(a)).slice(0, 50).map((e: any) => ({
           type: e.type,
           reason: e.reason,
           message: e.message,
           object: `${e.involvedObject?.kind}/${e.involvedObject?.name}`,
-          time: e.lastTimestamp || e.eventTime,
-        })).slice(0, 50);
+          time: e.lastTimestamp || e.eventTime || e.metadata?.creationTimestamp,
+        }));
         return { content: [{ type: "text", text: JSON.stringify(events, null, 2) }] };
       }
 

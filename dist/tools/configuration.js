@@ -87,13 +87,15 @@ export async function handleConfigurationTool(name, args) {
             case "list_events": {
                 const { namespace } = args;
                 const res = await coreV1Api.listNamespacedEvent({ namespace });
-                const events = res.items.map((e) => ({
+                // The API returns events in name order, so sort before keeping the 50 most recent
+                const eventTime = (e) => new Date(e.lastTimestamp || e.eventTime || e.metadata?.creationTimestamp || 0).getTime();
+                const events = res.items.sort((a, b) => eventTime(b) - eventTime(a)).slice(0, 50).map((e) => ({
                     type: e.type,
                     reason: e.reason,
                     message: e.message,
                     object: `${e.involvedObject?.kind}/${e.involvedObject?.name}`,
-                    time: e.lastTimestamp || e.eventTime,
-                })).slice(0, 50);
+                    time: e.lastTimestamp || e.eventTime || e.metadata?.creationTimestamp,
+                }));
                 return { content: [{ type: "text", text: JSON.stringify(events, null, 2) }] };
             }
             case "list_persistent_volume_claims": {

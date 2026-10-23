@@ -400,16 +400,34 @@ export async function handleCloudAwarenessTool(name, args) {
                 const kubeSystem = "kube-system";
                 const deployments = await appsV1Api.listNamespacedDeployment({ namespace: kubeSystem });
                 const daemonsets = await appsV1Api.listNamespacedDaemonSet({ namespace: kubeSystem });
-                const findDep = (names) => deployments.items.find((d) => names.includes(d.metadata?.name || ""));
-                const findDs = (names) => daemonsets.items.find((d) => names.includes(d.metadata?.name || ""));
+                // Addons are matched by name or k8s-app label; managed platforms version the names (GKE: metrics-server-v1.36.0)
+                const matches = (o, names) => names.includes(o.metadata?.name || "") || names.includes(o.metadata?.labels?.["k8s-app"] || "");
+                const findDep = (names) => deployments.items.find((d) => matches(d, names));
+                const findDs = (names) => daemonsets.items.find((d) => matches(d, names) && (d.status?.desiredNumberScheduled || 0) > 0);
                 const coreDns = findDep(["coredns", "kube-dns"]);
                 const metricsServer = findDep(["metrics-server"]);
-                const kubeProxy = findDs(["kube-proxy"]);
-                const cni = findDs(["aws-node", "azure-cni", "azure-cns", "gke-node-config", "calico-node", "cilium"]);
+                // GKE's netd / anetd (Dataplane V2) are its CNI daemonsets
+                const cni = findDs(["aws-node", "azure-cni", "azure-cns", "gke-node-config", "netd", "anetd", "calico-node", "cilium"]);
+                const kubeProxyDs = findDs(["kube-proxy"]);
+                let kubeProxy;
+                if (kubeProxyDs) {
+                    kubeProxy = { status: (kubeProxyDs.status?.numberReady || 0) >= 1 ? "healthy" : "degraded", numberReady: kubeProxyDs.status?.numberReady || 0, desired: kubeProxyDs.status?.desiredNumberScheduled || 0 };
+                }
+                else {
+                    // GKE Standard runs kube-proxy as static pods; Cilium-based dataplanes replace it entirely
+                    const staticPods = (await coreV1Api.listNamespacedPod({ namespace: kubeSystem, labelSelector: "component=kube-proxy" })).items || [];
+                    const ready = staticPods.filter((p) => p.status?.conditions?.some((c) => c.type === "Ready" && c.status === "True")).length;
+                    if (staticPods.length)
+                        kubeProxy = { status: ready === staticPods.length ? "healthy" : "degraded", mode: "static-pods", numberReady: ready, desired: staticPods.length };
+                    else if (["anetd", "cilium"].includes(cni?.metadata?.name || ""))
+                        kubeProxy = { status: "healthy", mode: `replaced by ${cni.metadata.name}` };
+                    else
+                        kubeProxy = { status: "missing" };
+                }
                 const summary = {
                     coredns: coreDns ? { status: (coreDns.status?.readyReplicas || 0) >= 1 ? "healthy" : "degraded", readyReplicas: coreDns.status?.readyReplicas || 0, replicas: coreDns.spec?.replicas || 0 } : { status: "missing" },
-                    metricsServer: metricsServer ? { status: (metricsServer.status?.readyReplicas || 0) >= 1 ? "healthy" : "degraded", readyReplicas: metricsServer.status?.readyReplicas || 0, replicas: metricsServer.spec?.replicas || 0 } : { status: "missing" },
-                    kubeProxy: kubeProxy ? { status: (kubeProxy.status?.numberReady || 0) >= 1 ? "healthy" : "degraded", numberReady: kubeProxy.status?.numberReady || 0, desired: kubeProxy.status?.desiredNumberScheduled || 0 } : { status: "missing" },
+                    metricsServer: metricsServer ? { name: metricsServer.metadata?.name, status: (metricsServer.status?.readyReplicas || 0) >= 1 ? "healthy" : "degraded", readyReplicas: metricsServer.status?.readyReplicas || 0, replicas: metricsServer.spec?.replicas || 0 } : { status: "missing" },
+                    kubeProxy,
                     cni: cni ? { name: cni.metadata?.name, status: (cni.status?.numberReady || 0) >= 1 ? "healthy" : "degraded", numberReady: cni.status?.numberReady || 0, desired: cni.status?.desiredNumberScheduled || 0 } : { status: "missing" },
                 };
                 return { content: [{ type: "text", text: safeJson(summary) }] };
