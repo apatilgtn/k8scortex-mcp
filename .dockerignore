@@ -1,0 +1,14 @@
+node_modules
+dist
+tests
+test-cases
+docs
+kubernetes
+.git
+.github
+*.md
+*.log
+*.tgz
+sbom.json
+.env
+.env.*

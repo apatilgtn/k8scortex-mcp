@@ -1,10 +1,22 @@
 # K8sCortex — Kubernetes MCP Server
 
-[![smithery badge](https://smithery.ai/badge/apatil0431/k8scortex-mcp)](https://smithery.ai/server/apatil0431/k8scortex-mcp)
+[![CI](https://github.com/apatilgtn/k8scortex-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/apatilgtn/k8scortex-mcp/actions/workflows/ci.yml)
 [![npm version](https://badge.fury.io/js/k8scortex-mcp.svg)](https://www.npmjs.com/package/k8scortex-mcp)
+[![smithery badge](https://smithery.ai/badge/apatil0431/k8scortex-mcp)](https://smithery.ai/server/apatil0431/k8scortex-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-> A production-grade Model Context Protocol (MCP) server that gives developers, AI agents, and automation pipelines a single, secure, natural-language interface to Kubernetes — across any cloud, any cluster, any team.
+> **Give your AI agents Kubernetes access your security team will sign off on.** K8sCortex is one governed MCP gateway for GKE, EKS, AKS, OpenShift and local clusters: SSO on every request, role tiers, per-cluster policies, dry-run by default, and an audit log of who asked for what.
+
+Most Kubernetes MCP servers hand an agent your kubeconfig. K8sCortex sits in between: it decides, per person and per cluster, which of its 75 tools may run, and records every call. Clusters from different clouds live in one registry, with credentials minted on demand.
+
+```text
+You:     Why is checkout crashing on prod-gke? Roll it back if the last deploy broke it.
+Claude:  list_pods → describe_pod → get_pod_logs   (developer tools)
+         rollout_undo  [DRY RUN] would restore revision 4 (nginx:1.27) …
+You:     Do it.
+Claude:  rollout_undo dryRun=false → rolled back · rollout_status → 3/3 ready
+         (allowed because your SSO groups map to release-manager; both calls are in the audit log)
+```
 
 ---
 
@@ -20,19 +32,38 @@
 - **Dry-run safety** — destructive tools default to simulation mode
 - **Generic read coverage** — list/get support for resources outside curated write paths to avoid troubleshooting dead-ends
 
-## Install via npx (Fastest)
+## Install
 
-```bash
-npx k8scortex-mcp
+### Claude Desktop, Claude Code, Cursor and other MCP clients (stdio)
+
+Requires Node.js 22+ and a working kubeconfig. Add to your client's MCP configuration (Claude Desktop: `claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "k8scortex": {
+      "command": "npx",
+      "args": ["-y", "k8scortex-mcp"],
+      "env": { "K8SCORTEX_STDIO_ROLES": "developer" }
+    }
+  }
+}
 ```
 
-Or install globally:
+`developer` gives a read-only session; remove it for the full toolset. With Claude Code: `claude mcp add k8scortex -- npx -y k8scortex-mcp`.
+
+### As a shared service for a team (HTTP + OIDC)
 
 ```bash
-npm install -g k8scortex-mcp
+docker run -p 3000:3000 \
+  -e OIDC_ISSUER=https://login.example.com -e OIDC_AUDIENCE=k8scortex \
+  -e CLUSTERS_CONFIG=/config/clusters.json -v "$PWD/clusters.json:/config/clusters.json:ro" \
+  ghcr.io/apatilgtn/k8scortex-mcp:latest
 ```
 
-## Quick Start
+Run it in a management cluster with Workload Identity / IRSA / managed identity for the cloud providers, expose `/mcp` internally, and ship the audit log to your SIEM. See [Multi-cloud setup](#multi-cloud-setup) and [Authentication](#authentication).
+
+## Develop
 
 ### Prerequisites
 
@@ -63,19 +94,16 @@ DISABLE_AUTH=true PORT=3001 npm run dev
 npx @modelcontextprotocol/inspector sse http://localhost:3001/mcp
 ```
 
-### Connect with Claude Desktop
+### Connect Claude Desktop to a local build
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Point the client at your build instead of the npm package:
 
 ```json
 {
   "mcpServers": {
     "k8scortex": {
       "command": "node",
-      "args": ["<path-to>/k8scortex-mcp/dist/stdio.js"],
-      "env": {
-        "KUBECONFIG": "~/.kube/config"
-      }
+      "args": ["<path-to>/k8scortex-mcp/dist/stdio.js"]
     }
   }
 }
@@ -209,7 +237,7 @@ K8sCortex is designed as a governed platform interface, not an unrestricted Kube
 ## Architecture
 
 ```
-Claude / Prism Agent / CI-CD
+Claude / IDE agents / CI-CD
         │
         ▼
 ┌──────────────────────────────┐
@@ -256,33 +284,31 @@ src/
 │   ├── eks.ts            # Amazon EKS provider
 │   ├── gke.ts            # Google GKE provider
 │   └── azure-keyvault.ts # Azure Key Vault provider
-└── tools/
-    ├── workload.ts       # list_pods, get_pod_logs, describe_deployment, list_nodes
-    ├── deployment.ts     # scale_deployment, restart_pod
-    ├── configuration.ts  # get_configmap, describe_namespace_quota, list_events
-    ├── observability.ts  # get_hpa_status, list_warning_events, get_node_pressure
-    └── multicluster.ts   # list_clusters, get_cluster_info
+└── tools/                # 75 tools in 14 modules: workload, deployment, configuration,
+                          # config_management, workload_creation, jobs, network, observability,
+                          # resource_intelligence, cloud_awareness, cluster_admin, gitops,
+                          # generic_read, multicluster
 
-kubernetes/               # Production manifests
-├── namespace.yaml
-├── deployment.yaml
-├── service.yaml
-├── rbac.yaml
-├── network-policy.yaml
-├── hpa.yaml
-├── secret-provider-class.yaml
-└── alerts.yaml           # Prometheus alerting rules
+tests/
+├── *.test.ts             # Unit and auth/audit integration tests (vitest)
+└── e2e/
+    ├── kwok/             # 164-scenario matrix on two simulated clusters (runs in CI)
+    └── gke/              # Every tool, both GKE providers and policies on a real GKE cluster
+
+kubernetes/               # Example manifests (being updated for multi-cloud)
+Dockerfile                # Image published to ghcr.io/apatilgtn/k8scortex-mcp
 
 docs/
 ├── developer-guide.md    # End-user documentation
 ├── operator-runbook.md   # Platform team operations
-├── slos.md               # Service level objectives
-└── adrs/                 # Architecture decision records
-    ├── ADR-001-tool-taxonomy.md
-    ├── ADR-002-idp-integration.md
-    ├── ADR-003-role-model.md
-    └── ADR-004-credential-management.md
+└── slos.md               # Service level objectives
 ```
+
+---
+
+## Testing
+
+Every push runs lint, typecheck, unit tests, auth/audit integration tests and a 164-scenario end-to-end matrix on two [KWOK](https://kwok.sigs.k8s.io/) clusters (GKE-like and EKS-like). Releases are also checked against a real GKE cluster with [`npm run test:e2e:gke`](tests/e2e/gke/README.md): v1.1.1 passed 100/100 on GKE 1.36, and that run found the three GKE-specific bugs fixed in the [changelog](CHANGELOG.md).
 
 ---
 
@@ -291,18 +317,12 @@ docs/
 - **[Developer Guide](docs/developer-guide.md)** — How to connect, available tools, example queries
 - **[Operator Runbook](docs/operator-runbook.md)** — Deploy, upgrade, rotate credentials, incident response
 - **[SLOs](docs/slos.md)** — Availability, latency, and alerting targets
+- **[Changelog](CHANGELOG.md)**
 
-## Document Files
+## Contributing
 
-- Word documents are consolidated in **[docs/docx](docs/docx)**.
-- Current files:
-  - `K8sCortex_Cloud_Testing_Publishing_Plan.docx`
-  - `K8sCortex_Project_Plan.docx`
-  - `K8sCortex_Project_Plan_v3.docx`
-  - `K8sCortex_Project_Plan_v4.docx`
-
----
+Issues and pull requests are welcome. Run `npm run release:gate` before opening a PR; new tools need a role in `src/roles.ts` and a case in the KWOK matrix.
 
 ## License
 
-Internal — Platform Engineering
+[MIT](LICENSE)

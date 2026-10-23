@@ -11,6 +11,8 @@
 ### Packaging
 
 - Requires Node.js 22 or later; on older Node npm silently skipped the GKE provider's `google-auth-library` dependency
+- Container image `ghcr.io/apatilgtn/k8scortex-mcp` (linux/amd64 and arm64, non-root), built and smoke-tested on every release tag
+- Listed in the official MCP Registry as `io.github.apatilgtn/k8scortex-mcp`
 
 ### Testing
 
