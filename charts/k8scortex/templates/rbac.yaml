@@ -99,10 +99,10 @@ rules:
   - apiGroups: [""]
     resources: [configmaps, services]
     verbs: [create, patch]
-  # create/update_secret (update merges into the current value, so it reads it)
+  # create/update_secret (values are written, never read back)
   - apiGroups: [""]
     resources: [secrets]
-    verbs: [create, get, patch]
+    verbs: [create, patch]
   # create_horizontal_pod_autoscaler
   - apiGroups: [autoscaling]
     resources: [horizontalpodautoscalers]

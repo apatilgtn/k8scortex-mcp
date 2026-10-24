@@ -61,6 +61,13 @@ describe("MCP server", () => {
     expect(await callText(client, "list_clusters", {})).toMatch(/Unauthorized/);
   });
 
+  it("says which role a denied tool needs, so callers know who can do it", async () => {
+    useClusters([{ name: "dev" }]);
+    const client = await connect({ oid: "dev-user", roles: ["developer"] });
+    expect(await callText(client, "rollout_undo", { namespace: "default", deploymentName: "web", cluster: "dev" }))
+      .toMatch(/Unauthorized to invoke tool: rollout_undo\. Requires role release-manager or higher; caller has developer/);
+  });
+
   it("requires an explicit cluster for mutating tools when several clusters are registered", async () => {
     useClusters([{ name: "dev" }, { name: "prod" }]);
     const client = await connect(admin);

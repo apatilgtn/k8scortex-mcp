@@ -53,7 +53,7 @@ export const configManagementTools = [
   },
   {
     name: "update_secret",
-    description: "Updates an existing Secret by patching its stringData. KNOWN LIMITATION: The Kubernetes API never returns stringData on read (it is write-only); the API server stores values as base64 in the data field. This means the client-side merge only contains the keys passed in args.stringData — existing keys not included in the request will be silently dropped. If you need to preserve existing keys, read them first via get_secret and re-supply all values.",
+    description: "Updates an existing Secret: each key in stringData is added or replaced, and keys you do not pass are kept unchanged. Values are never returned.",
     inputSchema: {
       type: "object",
       properties: {
@@ -155,17 +155,8 @@ export async function handleConfigManagementTool(name: string, args: any): Promi
           return { content: [{ type: "text", text: `[DRY RUN] Would update Secret ${args.secretName} in namespace ${namespace} on cluster ${cluster}.` }] };
         }
 
-        const current = await coreV1Api.readNamespacedSecret({
-          namespace,
-          name: args.secretName,
-        });
-        // KNOWN LIMITATION: stringData is write-only in the Kubernetes API. The read above returns
-        // base64-encoded `data`, not `stringData`, so (current as any).stringData is always {}.
-        // The merge below is therefore equivalent to args.stringData only — existing keys not
-        // supplied in this call will be overwritten/dropped. This is accepted behaviour; callers
-        // that need to preserve existing keys must re-supply them explicitly.
-        const mergedStringData = { ...((current as any).stringData || {}), ...(args.stringData || {}) };
-        const patch = [{ op: "add", path: "/stringData", value: mergedStringData }];
+        // The API server merges stringData into the existing data: passed keys are replaced, the rest kept
+        const patch = [{ op: "add", path: "/stringData", value: args.stringData || {} }];
         await coreV1Api.patchNamespacedSecret({
           namespace,
           name: args.secretName,

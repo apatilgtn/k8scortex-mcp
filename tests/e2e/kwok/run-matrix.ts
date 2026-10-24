@@ -294,11 +294,14 @@ async function toolsSuite() {
   await toolCase(c, S, "update_configmap", { namespace: NS, configMapName: `e2e-cm-${runId}`, data: { B: "2" }, dryRun: false, ...cl }, [], {
     verify: () => assert(jsonpath(DEV, `configmap e2e-cm-${runId}`, "{.data.B}") === "2", "configmap not updated"),
   });
-  await toolCase(c, S, "create_secret", { namespace: NS, secretName: `e2e-secret-${runId}`, stringData: { TOKEN: "s3cr3t-value" }, dryRun: false, ...cl }, [(t) => (t.includes("s3cr3t-value") ? "secret value echoed in tool output" : undefined)], {
+  await toolCase(c, S, "create_secret", { namespace: NS, secretName: `e2e-secret-${runId}`, stringData: { TOKEN: "s3cr3t-value", USER: "app" }, dryRun: false, ...cl }, [(t) => (t.includes("s3cr3t-value") ? "secret value echoed in tool output" : undefined)], {
     verify: () => assert(Buffer.from(jsonpath(DEV, `secret e2e-secret-${runId}`, "{.data.TOKEN}"), "base64").toString() === "s3cr3t-value", "secret missing or wrong value"),
   });
   await toolCase(c, S, "update_secret", { namespace: NS, secretName: `e2e-secret-${runId}`, stringData: { TOKEN: "rotated-value" }, dryRun: false, ...cl }, [], {
-    verify: () => assert(Buffer.from(jsonpath(DEV, `secret e2e-secret-${runId}`, "{.data.TOKEN}"), "base64").toString() === "rotated-value", "secret not rotated"),
+    verify: () => {
+      assert(Buffer.from(jsonpath(DEV, `secret e2e-secret-${runId}`, "{.data.TOKEN}"), "base64").toString() === "rotated-value", "secret not rotated");
+      assert(Buffer.from(jsonpath(DEV, `secret e2e-secret-${runId}`, "{.data.USER}"), "base64").toString() === "app", "a key that was not passed was dropped");
+    },
   });
 
   // Namespaces, autoscaling, networking
