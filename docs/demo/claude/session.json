@@ -1,0 +1,959 @@
+{
+  "recordedAt": "2026-10-23T10:21:48.278Z",
+  "system": "You are helping an engineer operate Kubernetes through the k8scortex tools. Keep every reply to at most 4 short lines of plain text, no headings or tables. When a tool call is denied, say why in one line and stop.",
+  "scenes": [
+    {
+      "title": "Checkout is down in prod",
+      "why": "Every minute of a broken checkout is lost revenue. Diagnose fast, change safely.",
+      "steps": [
+        {
+          "who": "priya",
+          "roles": [
+            "developer"
+          ],
+          "prompt": "Checkout in the shop namespace on the prod cluster is failing. What's wrong? If a bad rollout caused it, roll it back.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll check the checkout deployment status and recent events in the shop namespace on prod."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01EAMR4ssQUPU4PCSKxkhTai",
+              "tool": "describe_deployment",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01EAMR4ssQUPU4PCSKxkhTai",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"ready\": 1,\n    \"updated\": 2,\n    \"available\": 1\n  },\n  \"containers\": [\n    {\n      \"name\": \"checkout\",\n      \"image\": \"acme/checkout:1.5.0\",\n      \"requests\": {},\n      \"limits\": {}\n    }\n  ],\n  \"labels\": {\n    \"app\": \"checkout\"\n  },\n  \"conditions\": [\n    {\n      \"type\": \"Progressing\",\n      \"status\": \"True\",\n      \"reason\": \"ReplicaSetUpdated\",\n      \"message\": \"ReplicaSet \\\"checkout-68d65f477\\\" is progressing.\"\n    },\n    {\n      \"type\": \"Available\",\n      \"status\": \"False\",\n      \"reason\": \"MinimumReplicasUnavailable\",\n      \"message\": \"Deployment does not have minimum availability.\"\n    }\n  ],\n  \"selector\": {\n    \"app\": \"checkout\"\n  }\n}"
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01AWS7DrcLcYkAGeCai6LvSQ",
+              "tool": "list_warning_events",
+              "input": {
+                "namespace": "shop",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01AWS7DrcLcYkAGeCai6LvSQ",
+              "error": true,
+              "text": "Unauthorized to invoke tool: list_warning_events. Requires role sre or higher; caller has developer"
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01JNyejyg4j8Zm6N3srTRD8E",
+              "tool": "rollout_status",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01JNyejyg4j8Zm6N3srTRD8E",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"status\": \"in-progress\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"updated\": 2,\n    \"available\": 1\n  },\n  \"progressing\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:52.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:17:54.000Z\",\n    \"message\": \"ReplicaSet \\\"checkout-68d65f477\\\" is progressing.\",\n    \"reason\": \"ReplicaSetUpdated\",\n    \"status\": \"True\",\n    \"type\": \"Progressing\"\n  },\n  \"availableCondition\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:55.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:17:55.000Z\",\n    \"message\": \"Deployment does not have minimum availability.\",\n    \"reason\": \"MinimumReplicasUnavailable\",\n    \"status\": \"False\",\n    \"type\": \"Available\"\n  }\n}"
+            },
+            {
+              "kind": "text",
+              "text": "The checkout deployment is stuck mid-rollout to image `checkout:1.5.0` with only 1/2 pods available. Let me check the failing pod for the root cause."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_018WBJ9912wLdVjAWk67oVat",
+              "tool": "list_pods",
+              "input": {
+                "namespace": "shop",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_018WBJ9912wLdVjAWk67oVat",
+              "error": false,
+              "text": "[\n  {\n    \"name\": \"checkout-675c4f574b-fc9nz\",\n    \"ready\": \"True\",\n    \"status\": \"Running\",\n    \"restartCount\": 0,\n    \"nodeName\": \"k8scortex-prod-control-plane\",\n    \"ip\": \"10.244.0.26\",\n    \"age\": \"0m\"\n  },\n  {\n    \"name\": \"checkout-68d65f477-pgxpl\",\n    \"ready\": \"False\",\n    \"status\": \"Running\",\n    \"reason\": \"Error\",\n    \"restartCount\": 3,\n    \"nodeName\": \"k8scortex-prod-control-plane\",\n    \"ip\": \"10.244.0.28\",\n    \"age\": \"0m\"\n  },\n  {\n    \"name\": \"checkout-68d65f477-rbz2n\",\n    \"ready\": \"False\",\n    \"status\": \"Running\",\n    \"reason\": \"Error\",\n    \"restartCount\": 3,\n    \"nodeName\": \"k8scortex-prod-control-plane\",\n    \"ip\": \"10.244.0.27\",\n    \"age\": \"0m\"\n  }\n]"
+            },
+            {
+              "kind": "text",
+              "text": "New ReplicaSet pods (68d65f477) are crash-looping with 3 restarts. Checking logs to confirm root cause."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01NtyzZ9TN1kJuVaYbWtQYpN",
+              "tool": "get_pod_logs",
+              "input": {
+                "namespace": "shop",
+                "podName": "checkout-68d65f477-pgxpl",
+                "cluster": "prod",
+                "tailLines": 50
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01NtyzZ9TN1kJuVaYbWtQYpN",
+              "error": false,
+              "text": "checkout 1.5.0 starting\nERROR payments-db:5432 connection refused (DB_HOST=payments-db.shop.svc)\n"
+            },
+            {
+              "kind": "text",
+              "text": "Root cause: the new rollout (image `checkout:1.5.0`, ReplicaSet `checkout-68d65f477`) fails to connect to `payments-db.shop.svc:5432` and crash-loops, while the old ReplicaSet pod still works fine. Rolling back now."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_013kpit9SwYGDSkD7ZXCVRGS",
+              "tool": "rollout_undo",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod",
+                "dryRun": false
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_013kpit9SwYGDSkD7ZXCVRGS",
+              "error": true,
+              "text": "Unauthorized to invoke tool: rollout_undo. Requires role release-manager or higher; caller has developer"
+            },
+            {
+              "kind": "text",
+              "text": "I can't roll back — your `developer` role lacks the `release-manager` permission `rollout_undo` requires. Someone with that role needs to run `rollout_undo` on `checkout` in `shop`/prod; the fix is reverting off image `1.5.0` since it can't reach `payments-db`."
+            }
+          ]
+        },
+        {
+          "who": "sam",
+          "roles": [
+            "release-manager"
+          ],
+          "prompt": "Roll back the checkout deployment in the shop namespace on prod. The 1.5.0 rollout is crash-looping.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll check current rollout status first, then roll it back."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_016JYn2pdmNN71gQCuGKCXun",
+              "tool": "rollout_status",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_016JYn2pdmNN71gQCuGKCXun",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"status\": \"in-progress\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"updated\": 2,\n    \"available\": 1\n  },\n  \"progressing\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:52.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:17:54.000Z\",\n    \"message\": \"ReplicaSet \\\"checkout-68d65f477\\\" is progressing.\",\n    \"reason\": \"ReplicaSetUpdated\",\n    \"status\": \"True\",\n    \"type\": \"Progressing\"\n  },\n  \"availableCondition\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:55.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:17:55.000Z\",\n    \"message\": \"Deployment does not have minimum availability.\",\n    \"reason\": \"MinimumReplicasUnavailable\",\n    \"status\": \"False\",\n    \"type\": \"Available\"\n  }\n}"
+            },
+            {
+              "kind": "text",
+              "text": "Confirmed: checkout is in-progress with only 1/2 available, consistent with crash-looping. I'll run the rollback now (dry-run first to preview)."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01BoLjRkREQcLt6euibBXRBU",
+              "tool": "rollout_undo",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod",
+                "dryRun": true
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01BoLjRkREQcLt6euibBXRBU",
+              "error": true,
+              "text": "Unauthorized to invoke tool: rollout_undo. rollout_undo on cluster 'prod' requires role sre or higher"
+            },
+            {
+              "kind": "text",
+              "text": "Can't proceed — `rollout_undo` on prod requires SRE-level role, and your current permissions don't grant that. You'll need someone with SRE access to perform the rollback."
+            }
+          ]
+        },
+        {
+          "who": "maria",
+          "roles": [
+            "sre"
+          ],
+          "prompt": "Checkout in the shop namespace on the prod cluster is crash-looping after the 1.5.0 rollout. Show me what a rollback would do. Don't change anything yet.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll check the pod status and crash details first, then preview the rollback."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_011XAxSLp2a3hY8h8i14XUeo",
+              "tool": "describe_deployment",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_011XAxSLp2a3hY8h8i14XUeo",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"ready\": 1,\n    \"updated\": 2,\n    \"available\": 1\n  },\n  \"containers\": [\n    {\n      \"name\": \"checkout\",\n      \"image\": \"acme/checkout:1.5.0\",\n      \"requests\": {},\n      \"limits\": {}\n    }\n  ],\n  \"labels\": {\n    \"app\": \"checkout\"\n  },\n  \"conditions\": [\n    {\n      \"type\": \"Progressing\",\n      \"status\": \"True\",\n      \"reason\": \"ReplicaSetUpdated\",\n      \"message\": \"ReplicaSet \\\"checkout-68d65f477\\\" is progressing.\"\n    },\n    {\n      \"type\": \"Available\",\n      \"status\": \"False\",\n      \"reason\": \"MinimumReplicasUnavailable\",\n      \"message\": \"Deployment does not have minimum availability.\"\n    }\n  ],\n  \"selector\": {\n    \"app\": \"checkout\"\n  }\n}"
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01VcGYBCTpKXuWmQxYLCwzhZ",
+              "tool": "rollout_status",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01VcGYBCTpKXuWmQxYLCwzhZ",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"status\": \"in-progress\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"updated\": 2,\n    \"available\": 1\n  },\n  \"progressing\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:52.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:17:54.000Z\",\n    \"message\": \"ReplicaSet \\\"checkout-68d65f477\\\" is progressing.\",\n    \"reason\": \"ReplicaSetUpdated\",\n    \"status\": \"True\",\n    \"type\": \"Progressing\"\n  },\n  \"availableCondition\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:55.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:17:55.000Z\",\n    \"message\": \"Deployment does not have minimum availability.\",\n    \"reason\": \"MinimumReplicasUnavailable\",\n    \"status\": \"False\",\n    \"type\": \"Available\"\n  }\n}"
+            },
+            {
+              "kind": "text",
+              "text": "Confirmed: `checkout` is on image `acme/checkout:1.5.0`, only 1/2 replicas available, Available condition is False (MinimumReplicasUnavailable). Running the rollback preview now (dry-run, no changes applied)."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01GoY1roLrGumuT1KwzbgqBn",
+              "tool": "rollout_undo",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod",
+                "dryRun": true
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01GoY1roLrGumuT1KwzbgqBn",
+              "error": false,
+              "text": "[DRY RUN] Would roll back deployment checkout in shop on cluster 'prod' to the previous ReplicaSet template."
+            },
+            {
+              "kind": "text",
+              "text": "Dry-run confirms: rollback would revert `checkout` to the previous ReplicaSet (pre-1.5.0 image), undoing the crash-looping update. No changes have been made — let me know if you want me to pull the previous image tag or actually execute it."
+            }
+          ]
+        },
+        {
+          "who": "maria",
+          "roles": [
+            "sre"
+          ],
+          "prompt": "Looks right. Do it and confirm checkout is healthy.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "Rolling back now, then I'll verify health."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_0139pLBVSidnRmfyx3oEQ9mm",
+              "tool": "rollout_undo",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod",
+                "dryRun": false
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_0139pLBVSidnRmfyx3oEQ9mm",
+              "error": false,
+              "text": "Successfully rolled back deployment checkout to revision 1 on cluster 'prod'."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01KAd46t4et59DLdRWnqktsd",
+              "tool": "rollout_status",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01KAd46t4et59DLdRWnqktsd",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"status\": \"complete\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"updated\": 2,\n    \"available\": 2\n  },\n  \"progressing\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:52.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:19:36.000Z\",\n    \"message\": \"ReplicaSet \\\"checkout-675c4f574b\\\" has successfully progressed.\",\n    \"reason\": \"NewReplicaSetAvailable\",\n    \"status\": \"True\",\n    \"type\": \"Progressing\"\n  },\n  \"availableCondition\": {\n    \"lastTransitionTime\": \"2026-10-23T10:19:36.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:19:36.000Z\",\n    \"message\": \"Deployment has minimum availability.\",\n    \"reason\": \"MinimumReplicasAvailable\",\n    \"status\": \"True\",\n    \"type\": \"Available\"\n  }\n}"
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01HmCS1euK8StwavdSbpdqhJ",
+              "tool": "describe_deployment",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01HmCS1euK8StwavdSbpdqhJ",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"replicas\": {\n    \"desired\": 2,\n    \"ready\": 2,\n    \"updated\": 2,\n    \"available\": 2\n  },\n  \"containers\": [\n    {\n      \"name\": \"checkout\",\n      \"image\": \"acme/checkout:1.4.2\",\n      \"requests\": {},\n      \"limits\": {}\n    }\n  ],\n  \"labels\": {\n    \"app\": \"checkout\"\n  },\n  \"conditions\": [\n    {\n      \"type\": \"Available\",\n      \"status\": \"True\",\n      \"reason\": \"MinimumReplicasAvailable\",\n      \"message\": \"Deployment has minimum availability.\"\n    },\n    {\n      \"type\": \"Progressing\",\n      \"status\": \"True\",\n      \"reason\": \"NewReplicaSetAvailable\",\n      \"message\": \"ReplicaSet \\\"checkout-675c4f574b\\\" has successfully progressed.\"\n    }\n  ],\n  \"selector\": {\n    \"app\": \"checkout\"\n  }\n}"
+            },
+            {
+              "kind": "text",
+              "text": "Rollback complete and healthy: `checkout` is back on `acme/checkout:1.4.2`, 2/2 replicas ready and available, rollout status \"complete\"."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Is prod running what we tested?",
+      "why": "Releases that differ between staging and prod are how untested code reaches customers.",
+      "steps": [
+        {
+          "who": "priya",
+          "roles": [
+            "developer"
+          ],
+          "prompt": "Is the payments Argo CD app (namespace argocd) on the same revision in staging and prod?",
+          "items": [
+            {
+              "kind": "text",
+              "text": "Checking the payments app's revision on both clusters."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_0199MXTYBaRPR6KjVmh9fJPJ",
+              "tool": "compare_clusters",
+              "input": {
+                "engine": "argocd",
+                "namespace": "argocd",
+                "appName": "payments",
+                "clusterA": "staging",
+                "clusterB": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_0199MXTYBaRPR6KjVmh9fJPJ",
+              "error": false,
+              "text": "{\n  \"clusterA\": \"staging\",\n  \"clusterB\": \"prod\",\n  \"staging\": {\n    \"revision\": \"a71d4b8\",\n    \"syncStatus\": \"Synced\"\n  },\n  \"prod\": {\n    \"revision\": \"9f3c2e1\",\n    \"syncStatus\": \"OutOfSync\"\n  },\n  \"driftDetected\": true\n}"
+            },
+            {
+              "kind": "text",
+              "text": "No — staging is on `a71d4b8` (Synced), prod is on `9f3c2e1` and OutOfSync. Prod is behind/drifted from staging."
+            }
+          ]
+        },
+        {
+          "who": "sam",
+          "roles": [
+            "release-manager"
+          ],
+          "prompt": "Sync the payments Argo CD app (namespace argocd) in staging, then in prod.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll sync payments on staging first, then prod."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_018w4Fq8uQJ3H5sjBW46Gk1e",
+              "tool": "sync_gitops_app",
+              "input": {
+                "engine": "argocd",
+                "namespace": "argocd",
+                "appName": "payments",
+                "cluster": "staging",
+                "dryRun": false
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_018w4Fq8uQJ3H5sjBW46Gk1e",
+              "error": false,
+              "text": "Successfully triggered sync for argocd 'payments' on cluster 'staging'."
+            },
+            {
+              "kind": "text",
+              "text": "Staging synced successfully. Now syncing prod — confirming before I proceed since this affects a production payments app."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01R1PpSymghUHPV7HJ666c1U",
+              "tool": "get_gitops_app_status",
+              "input": {
+                "engine": "argocd",
+                "namespace": "argocd",
+                "appName": "payments",
+                "cluster": "staging"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01R1PpSymghUHPV7HJ666c1U",
+              "error": false,
+              "text": "{\n  \"health\": \"Healthy\",\n  \"sync\": \"Synced\",\n  \"revision\": \"a71d4b8\"\n}"
+            },
+            {
+              "kind": "text",
+              "text": "Staging is healthy and synced at revision a71d4b8. Proceeding to sync prod now."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01Wn7kJyjfLxCfjwhE3WYjNJ",
+              "tool": "sync_gitops_app",
+              "input": {
+                "engine": "argocd",
+                "namespace": "argocd",
+                "appName": "payments",
+                "cluster": "prod",
+                "dryRun": false
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01Wn7kJyjfLxCfjwhE3WYjNJ",
+              "error": true,
+              "text": "Unauthorized to invoke tool: sync_gitops_app. sync_gitops_app on cluster 'prod' requires role sre or higher"
+            },
+            {
+              "kind": "text",
+              "text": "Staging sync succeeded and is healthy. Prod sync was denied — your current role lacks the required \"sre or higher\" permission for syncing on the prod cluster, so you'll need someone with that role to run it."
+            }
+          ]
+        },
+        {
+          "who": "sam",
+          "roles": [
+            "release-manager"
+          ],
+          "prompt": "Staging looks fine. Yes, sync prod now.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I can't retry that — it's not a confirmation gate, it's an RBAC restriction (sync_gitops_app on prod requires \"sre\" role or higher), and my permissions haven't changed. You'll need someone with that role to run the prod sync."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Flash sale in 10 minutes",
+      "why": "Scale ahead of traffic, but see the change before it happens.",
+      "steps": [
+        {
+          "who": "maria",
+          "roles": [
+            "sre"
+          ],
+          "prompt": "Flash sale in 10 minutes. Scale checkout in the shop namespace on prod to 6 replicas: dry run first, then apply it and confirm all replicas are ready.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll dry-run the scale first."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01MtgUsQsdf4ob1GAtdn8YrC",
+              "tool": "scale_deployment",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "replicas": 6,
+                "cluster": "prod",
+                "dryRun": true
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01MtgUsQsdf4ob1GAtdn8YrC",
+              "error": false,
+              "text": "[DRY RUN] Would scale deployment checkout in shop on cluster 'prod' to 6 replicas."
+            },
+            {
+              "kind": "text",
+              "text": "Dry run looks clean. Applying now."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01XnKuNx93sVjkKgFii5F55r",
+              "tool": "scale_deployment",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "replicas": 6,
+                "cluster": "prod",
+                "dryRun": false
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01XnKuNx93sVjkKgFii5F55r",
+              "error": false,
+              "text": "Successfully scaled deployment checkout to 6 replicas on cluster 'prod'."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01A8GKgcUqynv7GQ7yDhVGKm",
+              "tool": "rollout_status",
+              "input": {
+                "namespace": "shop",
+                "deploymentName": "checkout",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01A8GKgcUqynv7GQ7yDhVGKm",
+              "error": false,
+              "text": "{\n  \"name\": \"checkout\",\n  \"namespace\": \"shop\",\n  \"status\": \"complete\",\n  \"replicas\": {\n    \"desired\": 6,\n    \"updated\": 6,\n    \"available\": 6\n  },\n  \"progressing\": {\n    \"lastTransitionTime\": \"2026-10-23T10:17:52.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:19:36.000Z\",\n    \"message\": \"ReplicaSet \\\"checkout-675c4f574b\\\" has successfully progressed.\",\n    \"reason\": \"NewReplicaSetAvailable\",\n    \"status\": \"True\",\n    \"type\": \"Progressing\"\n  },\n  \"availableCondition\": {\n    \"lastTransitionTime\": \"2026-10-23T10:20:19.000Z\",\n    \"lastUpdateTime\": \"2026-10-23T10:20:19.000Z\",\n    \"message\": \"Deployment has minimum availability.\",\n    \"reason\": \"MinimumReplicasAvailable\",\n    \"status\": \"True\",\n    \"type\": \"Available\"\n  }\n}"
+            },
+            {
+              "kind": "text",
+              "text": "Done — checkout in shop/prod is scaled to 6/6 replicas, all available and rollout complete."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Rotate the payments database password",
+      "why": "Credentials must not be readable by everyone, echoed back, or written to logs.",
+      "steps": [
+        {
+          "who": "priya",
+          "roles": [
+            "developer"
+          ],
+          "prompt": "List the secrets in the shop namespace on prod.",
+          "items": [
+            {
+              "kind": "call",
+              "id": "toolu_01PVVfLHHfYLw3obUdmoya7s",
+              "tool": "list_k8s_resources",
+              "input": {
+                "version": "v1",
+                "resource": "secrets",
+                "namespace": "shop",
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01PVVfLHHfYLw3obUdmoya7s",
+              "error": true,
+              "text": "Reading 'secrets' through the generic read tools is not permitted"
+            },
+            {
+              "kind": "text",
+              "text": "I can't list secrets — the generic resource tool blocks reads of the `secrets` resource type for safety. There's no dedicated \"list secrets\" tool either; only create/update actions for named secrets are supported."
+            }
+          ]
+        },
+        {
+          "who": "maria",
+          "roles": [
+            "sre"
+          ],
+          "prompt": "Rotate the password key of the payments-db secret in the shop namespace on prod to a new strong random value. Don't show me the new value.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll generate a strong random value locally and update the secret without displaying it, running as a dry run first for safety."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01KXkEeLKJPCUdWLgphhBLmH",
+              "tool": "update_secret",
+              "input": {
+                "namespace": "shop",
+                "secretName": "payments-db",
+                "stringData": {
+                  "password": "••••••••"
+                },
+                "cluster": "prod",
+                "dryRun": true
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01KXkEeLKJPCUdWLgphhBLmH",
+              "error": false,
+              "text": "[DRY RUN] Would update Secret payments-db in namespace shop on cluster prod."
+            },
+            {
+              "kind": "text",
+              "text": "Dry run succeeded. Shall I apply this for real on prod (cluster: prod, namespace: shop, secret: payments-db)?"
+            }
+          ]
+        },
+        {
+          "who": "maria",
+          "roles": [
+            "sre"
+          ],
+          "prompt": "Yes, apply it.",
+          "items": [
+            {
+              "kind": "call",
+              "id": "toolu_01GMRGEyhZE7rxPnAVmn2jyo",
+              "tool": "update_secret",
+              "input": {
+                "namespace": "shop",
+                "secretName": "payments-db",
+                "stringData": {
+                  "password": "••••••••"
+                },
+                "cluster": "prod",
+                "dryRun": false
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01GMRGEyhZE7rxPnAVmn2jyo",
+              "error": false,
+              "text": "Successfully updated Secret payments-db."
+            },
+            {
+              "kind": "text",
+              "text": "Done — password key rotated on payments-db in shop (prod). Any consuming pods will need a restart to pick up the new value, since Secret updates aren't hot-reloaded."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "Node maintenance",
+      "why": "Draining the wrong node during business hours causes an outage.",
+      "steps": [
+        {
+          "who": "alex",
+          "roles": [
+            "platform-engineer"
+          ],
+          "prompt": "Drain the prod cluster's node for kernel patching.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I need to identify which prod cluster and node first."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01LSCPZYD6GSCAnuBkjk9cNz",
+              "tool": "list_clusters",
+              "input": {}
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01LSCPZYD6GSCAnuBkjk9cNz",
+              "error": false,
+              "text": "[\n  {\n    \"name\": \"staging\",\n    \"provider\": \"kubeconfig\",\n    \"cloud\": \"unknown\",\n    \"labels\": {\n      \"env\": \"staging\"\n    }\n  },\n  {\n    \"name\": \"prod\",\n    \"provider\": \"kubeconfig\",\n    \"cloud\": \"unknown\",\n    \"labels\": {\n      \"env\": \"prod\"\n    }\n  }\n]"
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01DPSLRKhwytER3NkKkbymC8",
+              "tool": "list_nodes",
+              "input": {
+                "cluster": "prod"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01DPSLRKhwytER3NkKkbymC8",
+              "error": false,
+              "text": "[\n  {\n    \"name\": \"k8scortex-prod-control-plane\",\n    \"status\": \"True\",\n    \"instanceType\": \"unknown\"\n  }\n]"
+            },
+            {
+              "kind": "text",
+              "text": "Prod has only one node, `k8scortex-prod-control-plane` — it's the control plane with no other nodes to take over workloads. Draining it would take down the entire cluster's workloads. Do you still want me to proceed (dry-run first, then real)?"
+            }
+          ]
+        },
+        {
+          "who": "alex",
+          "roles": [
+            "platform-engineer"
+          ],
+          "prompt": "Yes, we're in the maintenance window. Drain it.",
+          "items": [
+            {
+              "kind": "text",
+              "text": "I'll do a dry run first, then the real drain."
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01Q6JZAgnZ6vjpiEEh4CUuWe",
+              "tool": "drain_node",
+              "input": {
+                "nodeName": "k8scortex-prod-control-plane",
+                "cluster": "prod",
+                "dryRun": true
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01Q6JZAgnZ6vjpiEEh4CUuWe",
+              "error": true,
+              "text": "Unauthorized to invoke tool: drain_node. drain_node is disabled on cluster 'prod' by policy"
+            },
+            {
+              "kind": "text",
+              "text": "Draining is blocked by policy on the `prod` cluster — this tool is disabled there regardless of dry-run, so I can't proceed even with your confirmation. You'll need to use another method or have policy adjusted."
+            }
+          ]
+        },
+        {
+          "who": "alex",
+          "roles": [
+            "platform-engineer"
+          ],
+          "prompt": "OK, rehearse the drain on the staging node instead.",
+          "items": [
+            {
+              "kind": "call",
+              "id": "toolu_01Er5BBcAZQoLf2UstrNErXA",
+              "tool": "list_nodes",
+              "input": {
+                "cluster": "staging"
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01Er5BBcAZQoLf2UstrNErXA",
+              "error": false,
+              "text": "[\n  {\n    \"name\": \"k8scortex-staging-control-plane\",\n    \"status\": \"True\",\n    \"instanceType\": \"unknown\"\n  }\n]"
+            },
+            {
+              "kind": "call",
+              "id": "toolu_01KJwjypvEgfPDYrY41WpumR",
+              "tool": "drain_node",
+              "input": {
+                "nodeName": "k8scortex-staging-control-plane",
+                "cluster": "staging",
+                "dryRun": true
+              }
+            },
+            {
+              "kind": "result",
+              "id": "toolu_01KJwjypvEgfPDYrY41WpumR",
+              "error": false,
+              "text": "[DRY RUN] Would drain node k8scortex-staging-control-plane."
+            },
+            {
+              "kind": "text",
+              "text": "Dry run succeeded on staging's single node, `k8scortex-staging-control-plane`. Want me to run it for real now?"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "audit": [
+    {
+      "user": "priya",
+      "tool": "describe_deployment",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "priya",
+      "tool": "list_warning_events",
+      "cluster": null,
+      "status": "denied"
+    },
+    {
+      "user": "priya",
+      "tool": "rollout_status",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "priya",
+      "tool": "list_pods",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "priya",
+      "tool": "get_pod_logs",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "priya",
+      "tool": "rollout_undo",
+      "cluster": null,
+      "dryRun": false,
+      "status": "denied"
+    },
+    {
+      "user": "sam",
+      "tool": "rollout_status",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "sam",
+      "tool": "rollout_undo",
+      "cluster": "prod",
+      "dryRun": true,
+      "status": "denied"
+    },
+    {
+      "user": "maria",
+      "tool": "describe_deployment",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "rollout_status",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "rollout_undo",
+      "cluster": "prod",
+      "dryRun": true,
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "rollout_undo",
+      "cluster": "prod",
+      "dryRun": false,
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "rollout_status",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "describe_deployment",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "priya",
+      "tool": "compare_clusters",
+      "cluster": "staging,prod",
+      "status": "success"
+    },
+    {
+      "user": "sam",
+      "tool": "sync_gitops_app",
+      "cluster": "staging",
+      "dryRun": false,
+      "status": "success"
+    },
+    {
+      "user": "sam",
+      "tool": "get_gitops_app_status",
+      "cluster": "staging",
+      "status": "success"
+    },
+    {
+      "user": "sam",
+      "tool": "sync_gitops_app",
+      "cluster": "prod",
+      "dryRun": false,
+      "status": "denied"
+    },
+    {
+      "user": "maria",
+      "tool": "scale_deployment",
+      "cluster": "prod",
+      "dryRun": true,
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "scale_deployment",
+      "cluster": "prod",
+      "dryRun": false,
+      "status": "success"
+    },
+    {
+      "user": "maria",
+      "tool": "rollout_status",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "priya",
+      "tool": "list_k8s_resources",
+      "cluster": "prod",
+      "status": "failure"
+    },
+    {
+      "user": "maria",
+      "tool": "update_secret",
+      "cluster": "prod",
+      "dryRun": true,
+      "status": "success",
+      "stringData": "[REDACTED]"
+    },
+    {
+      "user": "maria",
+      "tool": "update_secret",
+      "cluster": "prod",
+      "dryRun": false,
+      "status": "success",
+      "stringData": "[REDACTED]"
+    },
+    {
+      "user": "alex",
+      "tool": "list_clusters",
+      "cluster": "default",
+      "status": "success"
+    },
+    {
+      "user": "alex",
+      "tool": "list_nodes",
+      "cluster": "prod",
+      "status": "success"
+    },
+    {
+      "user": "alex",
+      "tool": "drain_node",
+      "cluster": "prod",
+      "dryRun": true,
+      "status": "denied"
+    },
+    {
+      "user": "alex",
+      "tool": "list_nodes",
+      "cluster": "staging",
+      "status": "success"
+    },
+    {
+      "user": "alex",
+      "tool": "drain_node",
+      "cluster": "staging",
+      "dryRun": true,
+      "status": "success"
+    }
+  ]
+}

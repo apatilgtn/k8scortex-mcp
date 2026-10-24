@@ -9,17 +9,10 @@
 
 Most Kubernetes MCP servers hand an agent your kubeconfig. K8sCortex sits in between: it decides, per person and per cluster, which of its 75 tools may run, and records every call. Clusters from different clouds live in one registry, with credentials minted on demand.
 
-![A developer finds why checkout is crash-looping and is denied a rollback; a release manager gets a dry run, rolls back and the audit log shows every call](docs/demo/demo.gif)
+![Claude Code, signed in as a developer, finds that checkout 1.5.0 in prod cannot reach its database and is denied the rollback; a release manager is blocked by the prod policy; an SRE previews the rollback, applies it and confirms 2/2 healthy](docs/demo/claude/incident.gif)
 
-<sub>Real MCP tool calls against a kind cluster, no LLM in the recording. [How it was made](docs/demo/README.md).</sub>
-
-<details>
-<summary><b>Watch the 70-second walkthrough:</b> a prod incident, release drift, a flash sale, a password rotation and node maintenance across staging and prod</summary>
-
-![Five scenarios across staging and prod: a crash-looping checkout is rolled back by an SRE after a developer and a release manager are denied; drift between staging and prod is detected; checkout is scaled for a flash sale after a dry run; a database password is rotated without being echoed or logged; draining a prod node is blocked by policy. The audit trail lists every call](docs/demo/walkthrough.gif)
-
-Prod's policies in this recording: any change needs `sre`, and `drain_node` is disabled. [Scenario details](docs/demo/README.md#the-walkthrough).
-</details>
+<sub>A real Claude Code session with K8sCortex as its only tool, on a throwaway prod cluster: the developer is denied the rollback, the release manager is blocked by the prod policy, the SRE fixes it.
+**[Watch all five scenarios (97 s)](docs/demo/claude/claude-demo.mp4)**: incident, release drift, flash-sale scaling, password rotation, node maintenance. [How it was recorded](docs/demo/README.md).</sub>
 
 ---
 

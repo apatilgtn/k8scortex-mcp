@@ -36,5 +36,3 @@ sbom.json
 e2e-results.json
 e2e-gke-results.json
 
-# Demo recordings (the GIFs are committed; the walkthrough MP4 is an intermediate)
-docs/demo/*.mp4

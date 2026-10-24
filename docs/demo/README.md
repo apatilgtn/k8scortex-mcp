@@ -1,61 +1,72 @@
-# Demos
+# Claude Code + K8sCortex demo
 
-Both recordings replay real MCP tool calls: users talk to a real K8sCortex server over Streamable HTTP,
-and every line of output is a real result from kind clusters. There is no LLM in the recordings; the
-scripts type the questions to show the calls an agent would make. Users sign in with tokens signed by
-`TEST_JWT_SECRET`, a test-only alternative to OIDC.
+Real Claude Code sessions operating two kind clusters, `staging` and `prod`, through K8sCortex.
 
-| Recording | Script | What it shows |
-|---|---|---|
-| [`demo.gif`](demo.gif) (20 s) | [`demo.mjs`](demo.mjs) | A developer diagnoses a crash-looping deployment and is denied a rollback; a release manager dry-runs and rolls back |
-| [`walkthrough.gif`](walkthrough.gif) (70 s) | [`walkthrough.mjs`](walkthrough.mjs) | Five business scenarios across a `staging` and a `prod` cluster with production policies |
+| | |
+|---|---|
+| [`claude/incident.gif`](claude/incident.gif) | Scene 1 (40 s): a prod incident, from diagnosis to an SRE's rollback |
+| [`claude/claude-demo.mp4`](claude/claude-demo.mp4) | All five scenes (97 s) |
+| [`claude/claude.cast`](claude/claude.cast) | All five scenes as an [asciinema](https://asciinema.org) recording with a chapter per scene |
+| [`claude/session.json`](claude/session.json) | The recorded sessions: prompts, every tool call and result, Claude's answers, and the server's audit records |
 
-## The walkthrough
+## What was recorded
 
-The registry gives prod two policies: any change needs `sre`, and `drain_node` / `delete_namespace` are disabled.
+Each person is a separate `claude -p` session. K8sCortex is the only tool source (`--strict-mcp-config`), all
+built-in tools are off (`--tools ""`), and each session signs in to K8sCortex with that person's token, so the
+server's roles and policies apply to Claude exactly as they would to that person. Prod has two policies: any
+change needs `sre`, and `drain_node` / `delete_namespace` are disabled.
 
-1. **Checkout is down in prod.** Priya (developer) finds `CrashLoopBackOff` and the database error in the logs. Her rollback is denied by role, Sam's (release-manager) by the prod policy; Maria (SRE) dry-runs, rolls back and confirms 2/2 available.
-2. **Is prod running what we tested?** `compare_clusters` finds the Argo CD app `payments` on different revisions. Sam syncs staging; syncing prod is denied.
-3. **Flash sale.** Maria dry-runs and then scales checkout in prod to 6 replicas.
-4. **Rotate a database password.** Priya cannot read Secrets through generic reads; Maria rotates `payments-db`, the value is not echoed back and is `[REDACTED]` in the audit record.
-5. **Node maintenance.** Alex (platform-engineer) cannot drain a prod node at all; on staging the drain is a dry run.
+| Person | Role |
+|---|---|
+| priya | developer |
+| sam | release-manager |
+| maria | sre |
+| alex | platform-engineer |
 
-It ends with the audit trail: every call, who made it, on which cluster, and whether it succeeded, failed or was denied.
+1. **Checkout is down in prod.** Priya asks what's wrong. Claude reads the crash-looping 1.5.0 pod's logs, finds the database connection error, tries to roll back and is denied: rollbacks need release-manager. Sam's rollback is denied by the prod policy. Maria previews the rollback, then has Claude apply it and confirm 2/2 healthy on 1.4.2.
+2. **Is prod running what we tested?** Claude compares Argo CD's `payments` across clusters and finds prod behind. Sam's staging sync works; his prod sync is denied, and when he insists Claude explains it is a permission rule, not a confirmation.
+3. **Flash sale.** Maria asks for 6 replicas with a dry run first; Claude dry-runs, applies and confirms 6/6.
+4. **Password rotation.** Priya cannot list Secrets. Maria has Claude rotate `payments-db`'s password without showing it: dry run, then apply after she confirms. The audit record has the value `[REDACTED]`.
+5. **Node maintenance.** Claude warns Alex that prod has a single node; when he confirms, the drain is blocked by policy. The staging rehearsal is a dry run.
 
-## Run or re-record
+The replay ends with the audit trail K8sCortex wrote during the sessions.
+
+**Edited for the recording:** a system prompt asks Claude to keep replies to a few short lines. The replay skips
+Claude Code's internal `ToolSearch` calls and shows each tool result as a one-line preview. The new password
+Claude generated is masked (`••••••••`) in `session.json`. Nothing else is changed; the clusters were throwaway kind
+clusters.
+
+## Re-record
 
 ```bash
 npm run build
-docker build -t k8scortex-vhs docs/demo          # VHS with Node.js
-
-# Short demo: one cluster
-kind create cluster --name k8scortex-demo
-docs/demo/setup.sh && node docs/demo/demo.mjs
-
-# Walkthrough: two clusters
 kind create cluster --name k8scortex-staging
 kind create cluster --name k8scortex-prod
-docs/demo/setup-walkthrough.sh && node docs/demo/walkthrough.mjs
+docs/demo/setup-clusters.sh                    # builds acme/checkout 1.4.2 / 1.5.0 / 1.5.1, seeds both clusters
+node docs/demo/claude/record.mjs               # runs the Claude sessions, writes claude/session.json
 ```
 
-To record, run VHS on the `kind` Docker network with a kubeconfig that uses the clusters' internal addresses
-(`kind get kubeconfig --internal --name <cluster>`; merge both for the walkthrough), then re-run the setup
-script before each take:
+Claude's answers differ between runs, so review `session.json` before replacing the recordings.
+
+## Render
+
+`replay.mjs` replays `session.json` in a terminal, or writes an asciicast with exact timing:
 
 ```bash
-docker run --rm --network kind -v "$PWD:/repo" -v /tmp/kind-internal:/kube/config:ro \
-  -e KUBECONFIG=/kube/config -w /repo k8scortex-vhs docs/demo/demo.tape          # writes demo.gif
-docker run --rm --network kind -v "$PWD:/repo" -v /tmp/kind-internal:/kube/config:ro \
-  -e KUBECONFIG=/kube/config -w /repo k8scortex-vhs docs/demo/walkthrough.tape   # writes walkthrough.mp4
+node docs/demo/claude/replay.mjs                                         # watch it
+CAST=docs/demo/claude/claude.cast node docs/demo/claude/replay.mjs
+SCENES=1 CAST=docs/demo/claude/incident.cast node docs/demo/claude/replay.mjs
 ```
 
-The walkthrough is recorded to MP4 because VHS's own GIF encoding runs out of memory at this length.
-Convert it at real speed (VHS captures it about twice as fast as real time when the machine is busy;
-compare the MP4's duration with the script's run time) and compress it:
+GIFs are rendered with [agg](https://github.com/asciinema/agg) (needs glibc 2.38+, e.g. Ubuntu 24.04, and the
+JetBrains Mono font), and the MP4 from the full GIF with ffmpeg:
 
 ```bash
-ffmpeg -i docs/demo/walkthrough.mp4 -vf "setpts=2.0*PTS,fps=6,palettegen=max_colors=64:stats_mode=full" /tmp/pal.png
-ffmpeg -i docs/demo/walkthrough.mp4 -i /tmp/pal.png \
-  -lavfi "setpts=2.0*PTS,fps=6[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle" docs/demo/walkthrough.gif
-gifsicle -O3 --lossy=20 docs/demo/walkthrough.gif -o docs/demo/walkthrough.gif
+THEME=1e1e2e,cdd6f4,45475a,f38ba8,a6e3a1,f9e2af,89b4fa,f5c2e7,94e2d5,bac2de,585b70,f38ba8,a6e3a1,f9e2af,89b4fa,f5c2e7,94e2d5,a6adc8
+agg --font-family "JetBrains Mono" --font-size 14 --theme $THEME --fps-cap 12 --last-frame-duration 4 \
+  docs/demo/claude/incident.cast docs/demo/claude/incident.gif
+agg --font-family "JetBrains Mono" --font-size 14 --theme $THEME --fps-cap 12 --last-frame-duration 4 \
+  docs/demo/claude/claude.cast /tmp/claude.gif
+ffmpeg -i /tmp/claude.gif -vf "fps=12,scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -crf 24 -pix_fmt yuv420p \
+  -movflags +faststart -an docs/demo/claude/claude-demo.mp4
 ```
