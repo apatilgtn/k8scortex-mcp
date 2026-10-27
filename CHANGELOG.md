@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.3 - October 27, 2026
+
+Found by running Claude Code against K8sCortex for the README demo.
+
+### Fixes
+
+- Role-table denials said only `Unauthorized to invoke tool: <tool>`, so an agent could not tell the user who may do it (and suggested running `kubectl` directly). They now name the required role and the caller's roles, in the error and in the audit record
+- `update_secret`'s description claimed keys that are not passed are dropped and pointed to a `get_secret` tool that does not exist, which made Claude refuse a routine password rotation. The API server merges `stringData` into the existing data, so other keys are kept; the description now says so and the unnecessary read is removed
+- The Helm chart's write role no longer needs `get` on Secrets
+
+### Demo
+
+- The README demo is a recorded Claude Code session with K8sCortex as its only tool, across a staging and a prod cluster (`docs/demo`)
+
+---
+
 ## v1.1.2 - October 23, 2026
 
 ### Deployment

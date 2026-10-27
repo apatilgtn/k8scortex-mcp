@@ -2,8 +2,8 @@ apiVersion: v2
 name: k8scortex
 description: Governed multi-cloud Kubernetes MCP server — OIDC, role tiers, per-cluster policies and audit logging in front of 75 tools for GKE, EKS, AKS and OpenShift
 type: application
-version: 0.1.0
-appVersion: "1.1.2"
+version: 0.1.1
+appVersion: "1.1.3"
 home: https://github.com/apatilgtn/k8scortex-mcp
 sources:
   - https://github.com/apatilgtn/k8scortex-mcp
