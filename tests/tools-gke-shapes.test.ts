@@ -63,6 +63,8 @@ const routes: Record<string, (q: URLSearchParams) => object> = {
     metadata: { name: "web", namespace: "app", resourceVersion: "100" },
     spec: { selector: { matchLabels: { app: "web" } }, template: template("hash-2", "nginx:1.28") },
   }),
+  "/api/v1/namespaces/app/configmaps/settings": () => ({ metadata: { name: "settings", namespace: "app" }, data: { LOG_LEVEL: "info" } }),
+  "/api/v1/namespaces/app/secrets/db": () => ({ metadata: { name: "db", namespace: "app" }, type: "Opaque" }),
   "/apis/apps/v1/namespaces/app/replicasets": () => list("ReplicaSet", [1, 2].map(rev => ({
     metadata: {
       name: `web-hash-${rev}`, namespace: "app",
@@ -116,6 +118,12 @@ const fakeGke: ClusterProvider = {
 };
 
 async function callText(name: string, args: object): Promise<string> {
+  const res = await callRaw(name, args);
+  expect(res.isError, res.content?.[0]?.text).toBeFalsy();
+  return res.content[0].text;
+}
+
+async function callRaw(name: string, args: object): Promise<any> {
   setClusterRegistry(createClusterRegistry({
     discover: async () => [{ name: "gke", provider: "kubeconfig", cloud: "gke" } as ClusterEntry],
     providers: { kubeconfig: fakeGke },
@@ -127,8 +135,7 @@ async function callText(name: string, args: object): Promise<string> {
   await client.connect(clientTransport);
   const res: any = await client.callTool({ name, arguments: { cluster: "gke", ...args } });
   await client.close();
-  expect(res.isError, res.content?.[0]?.text).toBeFalsy();
-  return res.content[0].text;
+  return res;
 }
 
 const callJson = async (name: string, args: object) => JSON.parse(await callText(name, args));
@@ -174,5 +181,77 @@ describe("rollout_undo", () => {
     const [w] = writes;
     expect(w).toMatchObject({ method: "PATCH", path: "/apis/apps/v1/namespaces/app/deployments/web", contentType: "application/json-patch+json" });
     expect(w.body).toEqual([{ op: "replace", path: "/spec/template", value: { metadata: { labels: { app: "web" } }, spec: { containers: [{ name: "web", image: "nginx:1.27" }] } } }]);
+  });
+});
+
+describe("update_configmap", () => {
+  it("sends a merge patch of only the passed keys, with no read-modify-write", async () => {
+    writes.length = 0;
+    await callText("update_configmap", { namespace: "app", configMapName: "settings", data: { FEATURE_X: "on", PORT: 8080 }, dryRun: false });
+    expect(writes).toEqual([{
+      method: "PATCH", path: "/api/v1/namespaces/app/configmaps/settings",
+      contentType: "application/merge-patch+json", body: { data: { FEATURE_X: "on", PORT: "8080" } },
+    }]);
+  });
+
+  it("rejects an empty data map instead of reporting success", async () => {
+    writes.length = 0;
+    const res = await callRaw("update_configmap", { namespace: "app", configMapName: "settings", data: {}, dryRun: false });
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toMatch(/data must contain at least one key/);
+    expect(writes).toHaveLength(0);
+  });
+});
+
+describe("update_secret", () => {
+  it("merges stringData and reports key names, never values", async () => {
+    writes.length = 0;
+    const text = await callText("update_secret", { namespace: "app", secretName: "db", stringData: { password: "s3cret" }, dryRun: false });
+    expect(writes).toEqual([{
+      method: "PATCH", path: "/api/v1/namespaces/app/secrets/db",
+      contentType: "application/merge-patch+json", body: { stringData: { password: "s3cret" } },
+    }]);
+    expect(text).toMatch(/keys: password/);
+    expect(text).not.toMatch(/s3cret/);
+  });
+
+  it.each([
+    [{}, /stringData must contain at least one key/],
+    [{ password: null }, /stringData\.password must be a string, number or boolean, got null/],
+    [{ nested: { a: 1 } }, /stringData\.nested must be a string, number or boolean, got object/],
+  ])("rejects %j, in dry run too, without writing", async (stringData, message) => {
+    writes.length = 0;
+    for (const dryRun of [true, false]) {
+      const res = await callRaw("update_secret", { namespace: "app", secretName: "db", stringData, dryRun });
+      expect(res.isError).toBe(true);
+      expect(res.content[0].text).toMatch(message);
+    }
+    expect(writes).toHaveLength(0);
+  });
+});
+
+describe("set_resource_limits", () => {
+  it("patches only the container's resources, so a concurrent image change is never reverted", async () => {
+    writes.length = 0;
+    await callText("set_resource_limits", { namespace: "app", deploymentName: "web", containerName: "web", cpuLimit: "500m", memoryRequest: "128Mi", dryRun: false });
+    expect(writes).toEqual([{
+      method: "PATCH", path: "/apis/apps/v1/namespaces/app/deployments/web",
+      contentType: "application/strategic-merge-patch+json",
+      body: { spec: { template: { spec: { containers: [{ name: "web", resources: { requests: { memory: "128Mi" }, limits: { cpu: "500m" } } }] } } } },
+    }]);
+    expect(JSON.stringify(writes[0].body)).not.toMatch(/image/);
+  });
+
+  it("targets the only container of a single-container Deployment by its real name", async () => {
+    writes.length = 0;
+    await callText("set_resource_limits", { namespace: "app", deploymentName: "web", containerName: "app", cpuRequest: "100m", dryRun: false });
+    expect(writes[0].body.spec.template.spec.containers[0].name).toBe("web");
+  });
+
+  it("rejects a call with no resource values", async () => {
+    writes.length = 0;
+    const res = await callRaw("set_resource_limits", { namespace: "app", deploymentName: "web", containerName: "web", dryRun: false });
+    expect(res.isError).toBe(true);
+    expect(writes).toHaveLength(0);
   });
 });

@@ -1,5 +1,27 @@
-import { CoreV1Api, loadYaml } from "@kubernetes/client-node";
+import { CoreV1Api, loadYaml, PatchStrategy, setHeaderOptions } from "@kubernetes/client-node";
 import { getK8sClientForCluster } from "../cluster-store.js";
+
+const MERGE_PATCH = setHeaderOptions("Content-Type", PatchStrategy.MergePatch);
+
+/**
+ * Validates key-value data for a ConfigMap or Secret. Numbers and booleans are stored as strings, as
+ * `kubectl create --from-literal` would; anything else (null, objects, arrays) is rejected rather than
+ * passed through, and an empty map is rejected so an update can never report success while changing nothing.
+ */
+export function toStringMap(value: unknown, field: string): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${field} must be an object of key-value pairs`);
+  }
+  const entries = Object.entries(value);
+  if (!entries.length) throw new Error(`${field} must contain at least one key`);
+  const out: Record<string, string> = {};
+  for (const [key, v] of entries) {
+    if (typeof v === "string") out[key] = v;
+    else if (typeof v === "number" || typeof v === "boolean") out[key] = String(v);
+    else throw new Error(`${field}.${key} must be a string, number or boolean, got ${v === null ? "null" : Array.isArray(v) ? "array" : typeof v}`);
+  }
+  return out;
+}
 
 const CLUSTER_PROP = { cluster: { type: "string", description: "Target cluster name (default: 'default')" } };
 
@@ -91,7 +113,7 @@ export async function handleConfigManagementTool(name: string, args: any): Promi
             apiVersion: "v1",
             kind: "ConfigMap",
             metadata: { name: args.configMapName, namespace },
-            data: args.data
+            data: toStringMap(args.data, "data")
           };
         } else {
           throw new Error("Must provide either yamlManifest or configMapName + data");
@@ -102,24 +124,22 @@ export async function handleConfigManagementTool(name: string, args: any): Promi
       }
 
       case "update_configmap": {
+        const data = toStringMap(args.data, "data");
+        const keys = Object.keys(data).join(", ");
         const dryRun = args.dryRun !== false;
         if (dryRun) {
-          return { content: [{ type: "text", text: `[DRY RUN] Would update ConfigMap ${args.configMapName} in namespace ${namespace} on cluster ${cluster}.` }] };
+          return { content: [{ type: "text", text: `[DRY RUN] Would set keys ${keys} on ConfigMap ${args.configMapName} in namespace ${namespace} on cluster ${cluster}.` }] };
         }
 
-        const current = await coreV1Api.readNamespacedConfigMap({
-          namespace,
-          name: args.configMapName,
-        });
-        const mergedData = { ...((current as any).data || {}), ...(args.data || {}) };
-        const patch = [{ op: "add", path: "/data", value: mergedData }];
+        // A merge patch is applied atomically by the API server: passed keys are set and the rest kept,
+        // so concurrent updates to different keys cannot overwrite each other (no read-modify-write)
         await coreV1Api.patchNamespacedConfigMap({
           namespace,
           name: args.configMapName,
-          body: patch,
-        });
-        
-        return { content: [{ type: "text", text: `Successfully updated ConfigMap ${args.configMapName}.` }] };
+          body: { data },
+        }, MERGE_PATCH);
+
+        return { content: [{ type: "text", text: `Successfully updated ConfigMap ${args.configMapName} (keys: ${keys}).` }] };
       }
 
       case "create_secret": {
@@ -139,7 +159,7 @@ export async function handleConfigManagementTool(name: string, args: any): Promi
             kind: "Secret",
             type: "Opaque",
             metadata: { name: args.secretName, namespace },
-            stringData: args.stringData
+            stringData: toStringMap(args.stringData, "stringData")
           };
         } else {
           throw new Error("Must provide either yamlManifest or secretName + stringData");
@@ -150,20 +170,22 @@ export async function handleConfigManagementTool(name: string, args: any): Promi
       }
 
       case "update_secret": {
+        const stringData = toStringMap(args.stringData, "stringData");
+        const keys = Object.keys(stringData).join(", ");
         const dryRun = args.dryRun !== false;
         if (dryRun) {
-          return { content: [{ type: "text", text: `[DRY RUN] Would update Secret ${args.secretName} in namespace ${namespace} on cluster ${cluster}.` }] };
+          return { content: [{ type: "text", text: `[DRY RUN] Would set keys ${keys} on Secret ${args.secretName} in namespace ${namespace} on cluster ${cluster}.` }] };
         }
 
         // The API server merges stringData into the existing data: passed keys are replaced, the rest kept
-        const patch = [{ op: "add", path: "/stringData", value: args.stringData || {} }];
         await coreV1Api.patchNamespacedSecret({
           namespace,
           name: args.secretName,
-          body: patch,
-        });
-        
-        return { content: [{ type: "text", text: `Successfully updated Secret ${args.secretName}.` }] };
+          body: { stringData },
+        }, MERGE_PATCH);
+
+        // Key names only: values are never echoed back
+        return { content: [{ type: "text", text: `Successfully updated Secret ${args.secretName} (keys: ${keys}).` }] };
       }
 
       default:

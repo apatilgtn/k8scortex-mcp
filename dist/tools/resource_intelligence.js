@@ -1,4 +1,6 @@
+import { PatchStrategy, setHeaderOptions } from "@kubernetes/client-node";
 import { getK8sClientForCluster } from "../cluster-store.js";
+const STRATEGIC_MERGE_PATCH = setHeaderOptions("Content-Type", PatchStrategy.StrategicMergePatch);
 const CLUSTER_PROP = { cluster: { type: "string", description: "Target cluster name (default: 'default')" } };
 export const resourceIntelligenceTools = [
     {
@@ -93,62 +95,40 @@ export async function handleResourceIntelligenceTool(name, args) {
                 if (dryRun) {
                     return { content: [{ type: "text", text: `[DRY RUN] Would update resources for ${args.deploymentName} container ${args.containerName}.` }] };
                 }
-                const res = await appsV1Api.readNamespacedDeployment({ namespace, name: args.deploymentName });
-                const deployment = res;
-                let found = false;
-                if (deployment.spec?.template?.spec?.containers) {
-                    for (const container of deployment.spec.template.spec.containers) {
-                        if (container.name === args.containerName) {
-                            found = true;
-                            if (!container.resources)
-                                container.resources = {};
-                            if (!container.resources.requests)
-                                container.resources.requests = {};
-                            if (!container.resources.limits)
-                                container.resources.limits = {};
-                            if (args.cpuRequest)
-                                container.resources.requests["cpu"] = args.cpuRequest;
-                            if (args.memoryRequest)
-                                container.resources.requests["memory"] = args.memoryRequest;
-                            if (args.cpuLimit)
-                                container.resources.limits["cpu"] = args.cpuLimit;
-                            if (args.memoryLimit)
-                                container.resources.limits["memory"] = args.memoryLimit;
-                        }
-                    }
+                const requests = {};
+                const limits = {};
+                if (args.cpuRequest)
+                    requests.cpu = args.cpuRequest;
+                if (args.memoryRequest)
+                    requests.memory = args.memoryRequest;
+                if (args.cpuLimit)
+                    limits.cpu = args.cpuLimit;
+                if (args.memoryLimit)
+                    limits.memory = args.memoryLimit;
+                if (!Object.keys(requests).length && !Object.keys(limits).length) {
+                    throw new Error("Provide at least one of cpuRequest, memoryRequest, cpuLimit, memoryLimit");
                 }
-                if (!found && (deployment.spec?.template?.spec?.containers?.length || 0) === 1) {
-                    const container = deployment.spec.template.spec.containers[0];
-                    if (!container.resources)
-                        container.resources = {};
-                    if (!container.resources.requests)
-                        container.resources.requests = {};
-                    if (!container.resources.limits)
-                        container.resources.limits = {};
-                    if (args.cpuRequest)
-                        container.resources.requests["cpu"] = args.cpuRequest;
-                    if (args.memoryRequest)
-                        container.resources.requests["memory"] = args.memoryRequest;
-                    if (args.cpuLimit)
-                        container.resources.limits["cpu"] = args.cpuLimit;
-                    if (args.memoryLimit)
-                        container.resources.limits["memory"] = args.memoryLimit;
-                    found = true;
-                }
-                if (!found) {
+                // The read only resolves the container name; the write below never sends back what was read
+                const deployment = await appsV1Api.readNamespacedDeployment({ namespace, name: args.deploymentName });
+                const containers = deployment.spec?.template?.spec?.containers ?? [];
+                // A single-container Deployment is matched even if the name differs, as before
+                const target = containers.find(c => c.name === args.containerName) ?? (containers.length === 1 ? containers[0] : undefined);
+                if (!target) {
                     throw new Error(`Container ${args.containerName} not found in Deployment ${args.deploymentName}`);
                 }
-                const patch = [{
-                        op: "replace",
-                        path: "/spec/template/spec/containers",
-                        value: deployment.spec?.template?.spec?.containers || [],
-                    }];
+                // Strategic merge patch: containers merge by name and requests/limits merge by key on the
+                // server, so the image and every other field are left alone. Replacing the containers array
+                // from the earlier read could revert an image a rollout changed in between.
+                const resources = {
+                    ...(Object.keys(requests).length ? { requests } : {}),
+                    ...(Object.keys(limits).length ? { limits } : {}),
+                };
                 await appsV1Api.patchNamespacedDeployment({
                     namespace,
                     name: args.deploymentName,
-                    body: patch,
-                });
-                return { content: [{ type: "text", text: `Successfully updated resources for container ${args.containerName} in ${args.deploymentName}.` }] };
+                    body: { spec: { template: { spec: { containers: [{ name: target.name, resources }] } } } },
+                }, STRATEGIC_MERGE_PATCH);
+                return { content: [{ type: "text", text: `Successfully updated resources for container ${target.name} in ${args.deploymentName}.` }] };
             }
             case "get_resource_recommendations": {
                 // Find pods for the deployment

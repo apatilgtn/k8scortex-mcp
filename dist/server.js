@@ -15,7 +15,7 @@ import { clusterAdminTools, handleClusterAdminTool } from "./tools/cluster_admin
 import { gitopsTools, handleGitOpsTool } from "./tools/gitops.js";
 import { genericReadTools, handleGenericReadTool } from "./tools/generic_read.js";
 import { cloudAwarenessTools, handleCloudAwarenessTool } from "./tools/cloud_awareness.js";
-import { checkClusterPolicies, isAuthorized, isMutatingTool, TOOL_ROLE_REQUIREMENTS } from "./roles.js";
+import { authorize, checkClusterPolicies, isMutatingTool } from "./roles.js";
 import { getClusterRegistry } from "./cluster-store.js";
 import { logAuditAction } from "./audit.js";
 import { userContext } from "./context.js";
@@ -59,12 +59,10 @@ export function buildMcpServer(getUser) {
         const args = request.params.arguments ?? {};
         const user = getUser();
         const userOid = user?.oid || "anonymous";
-        if (!user || !isAuthorized(user.roles, name)) {
-            // Say what is missing, so a caller (or an agent) can tell the user who can do it instead of guessing
-            const required = TOOL_ROLE_REQUIREMENTS[name];
-            const reason = !user ? "No authenticated user"
-                : !required ? `Unknown tool '${name}'`
-                    : `Requires role ${required} or higher; caller has ${user.roles.length ? user.roles.join(", ") : "no roles"}`;
+        // Say what is missing, so a caller (or an agent) can tell the user who can do it instead of guessing
+        const access = user ? authorize(user.roles, name) : { allowed: false, reason: "No authenticated user" };
+        if (!user || !access.allowed) {
+            const reason = access.allowed ? "No authenticated user" : access.reason;
             logAuditAction(userOid, name, args, "denied", reason);
             throw new Error(`Unauthorized to invoke tool: ${name}. ${reason}`);
         }

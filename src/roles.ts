@@ -107,25 +107,44 @@ export function isMutatingTool(toolName: string): boolean {
   return MUTATING_TOOL_PATTERN.test(toolName);
 }
 
+// ci-pipeline sits outside the hierarchy: it may call exactly these tools and nothing else
+const CI_PIPELINE_TOOLS = ['describe_deployment', 'list_events'];
+
+/** The minimum role for a tool, or undefined for unknown tools (never an inherited Object.prototype member). */
+export function requiredRoleFor(toolName: string): Role | undefined {
+  return Object.hasOwn(TOOL_ROLE_REQUIREMENTS, toolName) ? TOOL_ROLE_REQUIREMENTS[toolName] : undefined;
+}
+
+/**
+ * Decides whether the caller's roles allow a tool, and if not, why. The reason is shown to the MCP client
+ * and written to the audit log, so it names only roles K8sCortex knows: IdP groups passed through
+ * from the token (often dozens of directory IDs) are left out.
+ */
+export function authorize(userRoles: string[] = [], toolName: string): { allowed: true } | { allowed: false; reason: string } {
+  const requiredRole = requiredRoleFor(toolName);
+  if (!requiredRole) return { allowed: false, reason: `Unknown tool '${toolName}'` };
+
+  const knownRoles = userRoles.filter(isKnownRole);
+  if (knownRoles.includes('ci-pipeline') && CI_PIPELINE_TOOLS.includes(toolName)) return { allowed: true };
+
+  // User has access if any of their roles meet or exceed the required level
+  const requiredLevel = ROLE_HIERARCHY[requiredRole];
+  if (knownRoles.some(role => ROLE_HIERARCHY[role] >= requiredLevel)) return { allowed: true };
+
+  if (knownRoles.length && knownRoles.every(role => role === 'ci-pipeline')) {
+    return { allowed: false, reason: `Role ci-pipeline may only call ${CI_PIPELINE_TOOLS.join(', ')}; ${toolName} requires role ${requiredRole} or higher` };
+  }
+  return {
+    allowed: false,
+    reason: `Requires role ${requiredRole} or higher; caller has ${knownRoles.length ? knownRoles.join(', ') : 'no recognised roles'}`,
+  };
+}
+
 /**
  * Checks if the user's roles from Entra ID satisfy the tool's requirement.
  */
 export function isAuthorized(userRoles: string[] = [], toolName: string): boolean {
-  // ci-pipeline handles explicit scopes and might bypass standard hierarchy for deployment operations
-  if (userRoles.includes('ci-pipeline') && ['describe_deployment', 'list_events'].includes(toolName)) {
-    return true;
-  }
-
-  const requiredRole = TOOL_ROLE_REQUIREMENTS[toolName];
-  if (!requiredRole) return false; // Unknown tool
-
-  const requiredLevel = ROLE_HIERARCHY[requiredRole];
-
-  // User has access if any of their roles meet or exceed the required level
-  return userRoles.some(role => {
-    const userLevel = ROLE_HIERARCHY[role as Role] || 0;
-    return userLevel >= requiredLevel;
-  });
+  return authorize(userRoles, toolName).allowed;
 }
 
 export function isKnownRole(role: string): role is Role {

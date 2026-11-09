@@ -1,5 +1,21 @@
 # Changelog
 
+## v1.1.4 - November 9, 2026
+
+### Fixes
+
+- `update_secret` and `update_configmap` reported success for an empty map while changing nothing, and passed `null` or nested values straight to the API. They now reject those (in dry run too), store numbers and booleans as strings, and name the keys they set; Secret values are never echoed. `create_secret` and `create_configmap` validate the same way
+- `update_configmap` read the ConfigMap, merged locally and replaced all of `data`, so two concurrent updates to different keys could lose one. It now sends a merge patch the API server applies atomically
+- `set_resource_limits` replaced the whole `containers` array from an earlier read, so an image changed by a rollout in between was silently reverted. It now sends a strategic merge patch of only that container's `resources`, and rejects a call with no values
+- Role denials could print `Object.prototype` members (a tool named `constructor` showed function source as the required role), echoed every IdP group in the token to the client and the audit log, and told `ci-pipeline` callers they needed a "higher" role it can never reach. The decision and its reason now come from one place (`authorize` in `roles.ts`), name only known roles, and explain ci-pipeline's fixed allowlist
+
+### Testing
+
+- Fake-API tests check the exact patch type and body each write tool sends
+- Verified on minikube and a GKE Autopilot cluster: 12 concurrent ConfigMap updates all kept, `set_resource_limits` raced against `kubectl set image` for 6 rounds without reverting the image, and every one of the 75 tools allowed at its required role and denied one level below
+
+---
+
 ## v1.1.3 - October 27, 2026
 
 Found by running Claude Code against K8sCortex for the README demo.
